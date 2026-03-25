@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block title %}Suggest a Word{% endblock %}
+
+{% block content %}
+<section class="form-section">
+    <h1>Suggest a Word</h1>
+    <p class="form-intro">
+        Couldn't find a medical term? Submit it here and our expert
+        translator will review it and add the verified translation to LinguaMedica RW.
+    </p>
+
+    <form method="POST" action="{{ url_for('suggest') }}" class="suggest-form">
+        <div class="form-group">
+            <label for="english_word">English medical term *</label>
+            <input
+                type="text"
+                id="english_word"
+                name="english_word"
+                required
+                placeholder="e.g., Hypertension"
+                class="form-input"
+            >
+        </div>
+
+        <div class="form-group">
+            <label for="suggested_translation">
+                Suggested Kinyarwanda translation
+                <span class="label-hint">(optional — leave blank if unsure)</span>
+            </label>
+            <input
+                type="text"
+                id="suggested_translation"
+                name="suggested_translation"
+                placeholder="Your suggestion, if you have one"
+                class="form-input"
+            >
+        </div>
+
+        <div class="form-group">
+            <label for="context">
+                Where did you encounter this term?
+                <span class="label-hint">(optional — helps us prioritize)</span>
+            </label>
+            <textarea
+                id="context"
+                name="context"
+                rows="3"
+                placeholder="e.g., While translating a WHO document on maternal health..."
+                class="form-input"
+            ></textarea>
+        </div>
+
+        <div class="form-group">
+            <label for="email">
+                Your email
+                <span class="label-hint">(optional — we'll notify you when the term is added)</span>
+            </label>
+            <input
+                type="email"
+                id="email"
+                name="email"
+                placeholder="you@example.com"
+                class="form-input"
+            >
+        </div>
+
+        <button type="submit" class="btn btn-primary">Submit Suggestion</button>
+    </form>
+</section>
+{% endblock %}

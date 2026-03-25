@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+
+{% block title %}Search{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <h1>LinguaMedica <span class="hero-rw">RW</span></h1>
+    <p class="hero-subtitle">English ↔ Kinyarwanda · Curated medical translations for health professionals</p>
+    <p class="hero-count">{{ total_count }} verified terms</p>
+</section>
+
+<!-- Search Section -->
+<section class="search-section">
+    <div class="search-box">
+        <input
+            type="text"
+            id="searchInput"
+            class="search-input"
+            placeholder="Type a medical term in English or Kinyarwanda..."
+            autocomplete="off"
+            autofocus
+        >
+        <span class="search-hint" id="searchHint">Start typing to search instantly</span>
+    </div>
+
+    <!-- Results appear here (populated by JavaScript) -->
+    <div id="searchResults" class="results-container" style="display: none;"></div>
+
+    <!-- No results message -->
+    <div id="noResults" class="no-results" style="display: none;">
+        <p>No translations found for "<strong id="noResultsQuery"></strong>"</p>
+        <p>Would you like to <a href="{{ url_for('suggest') }}">suggest this word</a> for review?</p>
+    </div>
+</section>
+
+<!-- Recently Added Section -->
+{% if recent_terms %}
+<section class="recent-section">
+    <h2>Recently Added</h2>
+    <div class="recent-grid">
+        {% for term in recent_terms %}
+        <div class="term-card term-card-small">
+            <div class="term-pair">
+                <span class="term-en">{{ term.english }}</span>
+                <span class="term-arrow">→</span>
+                <span class="term-rw">{{ term.kinyarwanda }}</span>
+            </div>
+            {% if term.category %}
+            <span class="term-category">{{ term.category }}</span>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // ---------------------------------------------------------------
+    // CLIENT-SIDE INSTANT SEARCH
+    //
+    // WHY: All terms are loaded into the page as JSON.
+    // Searching happens in the browser — no server round-trip.
+    // This means:
+    //   - Instant results as you type
+    //   - Works even on slow connections (after initial page load)
+    //   - Zero server load for searches
+    //
+    // WHEN TO CHANGE: If you have 2000+ terms, switch to the
+    // /api/search endpoint with a debounced fetch() call.
+    // ---------------------------------------------------------------
+
+    const allTerms = {{ terms_json | tojson }};
+    const searchInput = document.getElementById('searchInput');
+    const searchResults = document.getElementById('searchResults');
+    const noResults = document.getElementById('noResults');
+    const noResultsQuery = document.getElementById('noResultsQuery');
+    const searchHint = document.getElementById('searchHint');
+
+    searchInput.addEventListener('input', function() {
+        const query = this.value.trim().toLowerCase();
+
+        if (query.length < 2) {
+            searchResults.style.display = 'none';
+            noResults.style.display = 'none';
+            searchHint.style.display = query.length === 0 ? 'block' : 'none';
+            return;
+        }
+
+        searchHint.style.display = 'none';
+
+        // Filter terms that match the query in English or Kinyarwanda
+        const matches = allTerms.filter(term =>
+            term.english.toLowerCase().includes(query) ||
+            term.kinyarwanda.toLowerCase().includes(query)
+        );
+
+        if (matches.length > 0) {
+            noResults.style.display = 'none';
+            searchResults.style.display = 'block';
+            searchResults.innerHTML = matches.map(term => `
+                <div class="result-card">
+                    <div class="result-header">
+                        <h3 class="result-english">${escapeHtml(term.english)}</h3>
+                        <span class="result-arrow">→</span>
+                        <h3 class="result-kinyarwanda">${escapeHtml(term.kinyarwanda)}</h3>
+                        ${term.category ? `<span class="term-category">${escapeHtml(term.category)}</span>` : ''}
+                    </div>
+                    ${term.example_en ? `
+                    <div class="result-examples">
+                        <p class="example"><span class="example-label">EN:</span> ${escapeHtml(term.example_en)}</p>
+                        ${term.example_rw ? `<p class="example"><span class="example-label">RW:</span> ${escapeHtml(term.example_rw)}</p>` : ''}
+                    </div>
+                    ` : ''}
+                    ${term.etymology ? `
+                    <div class="result-etymology">
+                        <p class="etymology-label">Why this translation?</p>
+                        <p class="etymology-text">${escapeHtml(term.etymology)}</p>
+                    </div>
+                    ` : ''}
+                </div>
+            `).join('');
+        } else {
+            searchResults.style.display = 'none';
+            noResults.style.display = 'block';
+            noResultsQuery.textContent = this.value.trim();
+        }
+    });
+
+    // Prevent XSS by escaping HTML in user-generated content
+    function escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+</script>
+{% endblock %}
