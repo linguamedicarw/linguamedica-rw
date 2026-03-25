@@ -51,6 +51,16 @@ def create_app():
     # Create database tables if they don't exist
     with app.app_context():
         db.create_all()
+        # Auto-seed if database is empty (first run on new deployment)
+        if Term.query.count() == 0:
+            from seed_data import STARTER_TERMS, ADMIN_USERNAME, ADMIN_PASSWORD
+            for term_data in STARTER_TERMS:
+                db.session.add(Term(**term_data))
+            if not Admin.query.first():
+                admin = Admin(username=ADMIN_USERNAME)
+                admin.set_password(ADMIN_PASSWORD)
+                db.session.add(admin)
+            db.session.commit()
 
     # -------------------------------------------------------------------
     # PUBLIC ROUTES — What everyone can access
