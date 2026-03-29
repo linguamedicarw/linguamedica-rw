@@ -12,11 +12,12 @@ Safe to run multiple times — checks for existing terms by English name.
 
 from app import create_app
 from models import db, Term, Admin
+import os
 
 # ------ CONFIGURATION ------
 # Change these before running!
 ADMIN_USERNAME = "khris"
-ADMIN_PASSWORD = "***REMOVED***"  # CHANGE THIS to something strong!
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme-set-env-var")
 
 # ------ ALL TERMS ------
 STARTER_TERMS = [
