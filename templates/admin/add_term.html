@@ -7,65 +7,40 @@
     <h1>{% if editing %}Edit Term{% else %}Add New Term{% endif %}</h1>
 
     <form method="POST" class="term-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
         <div class="form-row">
             <div class="form-group">
                 <label for="english">English term *</label>
-                <input
-                    type="text"
-                    id="english"
-                    name="english"
-                    required
-                    class="form-input"
-                    value="{{ term.english if editing else request.args.get('english', '') }}"
-                    placeholder="e.g., Hypertension"
-                >
+                <input type="text" id="english" name="english" required class="form-input"
+                       value="{{ term.english if editing else request.args.get('english', '') }}"
+                       placeholder="e.g., Hypertension">
             </div>
             <div class="form-group">
                 <label for="kinyarwanda">Kinyarwanda translation *</label>
-                <input
-                    type="text"
-                    id="kinyarwanda"
-                    name="kinyarwanda"
-                    required
-                    class="form-input"
-                    value="{{ term.kinyarwanda if editing else request.args.get('suggested', '') }}"
-                    placeholder="e.g., Umuvuduko w'amaraso"
-                >
+                <input type="text" id="kinyarwanda" name="kinyarwanda" required class="form-input"
+                       value="{{ term.kinyarwanda if editing else request.args.get('suggested', '') }}"
+                       placeholder="e.g., Umuvuduko w'amaraso">
             </div>
         </div>
 
         <div class="form-group">
             <label for="category">Category</label>
-            <input
-                type="text"
-                id="category"
-                name="category"
-                class="form-input"
-                value="{{ term.category if editing else '' }}"
-                placeholder="e.g., Cardiology, Anatomy, Infectious Disease"
-            >
+            <input type="text" id="category" name="category" class="form-input"
+                   value="{{ term.category if editing else '' }}"
+                   placeholder="e.g., Cardiology, Anatomy, Infectious Disease">
         </div>
 
         <div class="form-group">
             <label for="example_en">Example sentence (English)</label>
-            <textarea
-                id="example_en"
-                name="example_en"
-                rows="2"
-                class="form-input"
-                placeholder="e.g., The patient was diagnosed with hypertension."
-            >{{ term.example_en if editing else '' }}</textarea>
+            <textarea id="example_en" name="example_en" rows="2" class="form-input"
+                      placeholder="e.g., The patient was diagnosed with hypertension.">{{ term.example_en if editing else '' }}</textarea>
         </div>
 
         <div class="form-group">
             <label for="example_rw">Example sentence (Kinyarwanda)</label>
-            <textarea
-                id="example_rw"
-                name="example_rw"
-                rows="2"
-                class="form-input"
-                placeholder="e.g., Umurwayi yasuzumwe afite umuvuduko w'amaraso."
-            >{{ term.example_rw if editing else '' }}</textarea>
+            <textarea id="example_rw" name="example_rw" rows="2" class="form-input"
+                      placeholder="e.g., Umurwayi yasuzumwe afite umuvuduko w'amaraso.">{{ term.example_rw if editing else '' }}</textarea>
         </div>
 
         <div class="form-group">
@@ -73,13 +48,8 @@
                 Etymological explanation
                 <span class="label-hint">(why this translation makes linguistic sense)</span>
             </label>
-            <textarea
-                id="etymology"
-                name="etymology"
-                rows="3"
-                class="form-input"
-                placeholder="e.g., 'Umuvuduko' means pressure/force, 'w'amaraso' means of the blood..."
-            >{{ term.etymology if editing else '' }}</textarea>
+            <textarea id="etymology" name="etymology" rows="3" class="form-input"
+                      placeholder="e.g., 'Umuvuduko' means pressure/force, 'w'amaraso' means of the blood...">{{ term.etymology if editing else '' }}</textarea>
         </div>
 
         <div class="form-actions">
