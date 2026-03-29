@@ -6,6 +6,12 @@ This is the heart of the app. It:
 2. Sets up authentication (so only you can admin)
 3. Defines all the routes (URLs) users can visit
 4. Handles search, suggestions, and admin operations
+
+Security features:
+- CSRF protection on all forms (Flask-WTF)
+- Rate limiting on login route (Flask-Limiter)
+- Content-Security-Policy header
+- All credentials from environment variables
 """
 
 import os
@@ -17,6 +23,9 @@ from flask_login import (
     LoginManager, login_user, logout_user,
     login_required, current_user
 )
+from flask_wtf.csrf import CSRFProtect
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from config import Config
 from models import db, Term, Suggestion, Admin
 
@@ -25,34 +34,56 @@ from models import db, Term, Suggestion, Admin
 # App Factory
 # ---------------------------------------------------------------------------
 def create_app():
-    """
-    WHY a factory function?
-    - Makes testing easier (create fresh app instances)
-    - Keeps configuration flexible
-    - This is a Flask best practice
-    """
     app = Flask(__name__)
     app.config.from_object(Config)
 
-    # Initialize extensions with the app
+    # Initialize extensions
     db.init_app(app)
+    csrf = CSRFProtect(app)
+    limiter = Limiter(
+        app=app,
+        key_func=get_remote_address,
+        default_limits=[],
+        storage_uri="memory://",
+    )
 
     # Set up Flask-Login
     login_manager = LoginManager()
     login_manager.init_app(app)
-    login_manager.login_view = "admin_login"  # Redirect here if unauthorized
+    login_manager.login_view = "admin_login"
     login_manager.login_message_category = "warning"
 
     @login_manager.user_loader
     def load_user(user_id):
-        """Flask-Login calls this to reload a user from their session."""
         return db.session.get(Admin, int(user_id))
+
+    # ---------------------------------------------------------------
+    # Security headers
+    # ---------------------------------------------------------------
+    @app.after_request
+    def set_security_headers(response):
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data:; "
+            "font-src 'self'; "
+            "frame-ancestors 'none';"
+        )
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        return response
+
+    @app.errorhandler(429)
+    def ratelimit_handler(e):
+        flash("Too many login attempts. Please wait a minute and try again.", "danger")
+        return render_template("admin/login.html"), 429
 
     # Create database tables and auto-seed new terms
     with app.app_context():
         db.create_all()
 
-        # Auto-seed: add any new terms that don't exist yet (safe to run every deploy)
         from seed_data import STARTER_TERMS, ADMIN_USERNAME, ADMIN_PASSWORD
 
         added = 0
@@ -71,16 +102,11 @@ def create_app():
             print(f"Auto-seed: added {added} new terms (total: {Term.query.count()})")
 
     # -------------------------------------------------------------------
-    # PUBLIC ROUTES — What everyone can access
+    # PUBLIC ROUTES
     # -------------------------------------------------------------------
 
     @app.route("/")
     def index():
-        """
-        Homepage with search bar and recently added terms.
-        We load ALL terms as JSON into the page for instant client-side search.
-        For < 2000 terms this is fast and works offline after page load.
-        """
         terms = Term.query.order_by(Term.english.asc()).all()
         recent = Term.query.order_by(Term.created_at.desc()).limit(10).all()
         terms_json = [t.to_dict() for t in terms]
@@ -93,11 +119,6 @@ def create_app():
 
     @app.route("/suggest", methods=["GET", "POST"])
     def suggest():
-        """
-        Suggestion form — users submit words they couldn't find.
-        GET: show the form
-        POST: save the suggestion to the database
-        """
         if request.method == "POST":
             suggestion = Suggestion(
                 english_word=request.form.get("english_word", "").strip(),
@@ -112,18 +133,18 @@ def create_app():
         return render_template("suggest.html")
 
     # -------------------------------------------------------------------
-    # API ROUTE — For future mobile app or integrations
+    # API ROUTES (CSRF-exempt — no cookie auth)
     # -------------------------------------------------------------------
 
     @app.route("/api/terms")
-    def api_terms():
-        """JSON API endpoint — returns all terms. Ready for mobile apps."""
+    @csrf.exempt
+    def api_terms_route():
         terms = Term.query.order_by(Term.english.asc()).all()
         return jsonify([t.to_dict() for t in terms])
 
     @app.route("/api/search")
-    def api_search():
-        """Search API — query parameter: ?q=word"""
+    @csrf.exempt
+    def api_search_route():
         query = request.args.get("q", "").strip().lower()
         if not query:
             return jsonify([])
@@ -136,12 +157,12 @@ def create_app():
         return jsonify([t.to_dict() for t in results])
 
     # -------------------------------------------------------------------
-    # ADMIN ROUTES — Only you can access these
+    # ADMIN ROUTES
     # -------------------------------------------------------------------
 
     @app.route("/admin/login", methods=["GET", "POST"])
+    @limiter.limit("5 per minute")
     def admin_login():
-        """Admin login page."""
         if current_user.is_authenticated:
             return redirect(url_for("admin_dashboard"))
 
@@ -170,12 +191,6 @@ def create_app():
     @app.route("/admin")
     @login_required
     def admin_dashboard():
-        """
-        Admin dashboard — shows:
-        - Total terms in dictionary
-        - Pending suggestions to review
-        - Quick actions
-        """
         total_terms = Term.query.count()
         pending = Suggestion.query.filter_by(status="pending").count()
         suggestions = Suggestion.query.filter_by(status="pending") \
@@ -192,7 +207,6 @@ def create_app():
     @app.route("/admin/add", methods=["GET", "POST"])
     @login_required
     def admin_add_term():
-        """Add a new term to the dictionary."""
         if request.method == "POST":
             term = Term(
                 english=request.form.get("english", "").strip(),
@@ -211,7 +225,6 @@ def create_app():
     @app.route("/admin/edit/<int:term_id>", methods=["GET", "POST"])
     @login_required
     def admin_edit_term(term_id):
-        """Edit an existing term."""
         term = Term.query.get_or_404(term_id)
         if request.method == "POST":
             term.english = request.form.get("english", "").strip()
@@ -228,7 +241,6 @@ def create_app():
     @app.route("/admin/delete/<int:term_id>", methods=["POST"])
     @login_required
     def admin_delete_term(term_id):
-        """Delete a term from the dictionary."""
         term = Term.query.get_or_404(term_id)
         english = term.english
         db.session.delete(term)
@@ -239,7 +251,6 @@ def create_app():
     @app.route("/admin/suggestion/<int:suggestion_id>/<action>", methods=["POST"])
     @login_required
     def admin_handle_suggestion(suggestion_id, action):
-        """Approve or reject a suggestion."""
         suggestion = Suggestion.query.get_or_404(suggestion_id)
         if action == "approve":
             suggestion.status = "approved"
@@ -249,7 +260,6 @@ def create_app():
                 f'Now add it as a term.',
                 "success"
             )
-            # Redirect to add form pre-filled with the suggestion
             return redirect(url_for(
                 "admin_add_term",
                 english=suggestion.english_word,
@@ -270,5 +280,4 @@ def create_app():
 app = create_app()
 
 if __name__ == "__main__":
-    # debug=True auto-reloads on code changes — only for development
     app.run(debug=True, port=5000)
