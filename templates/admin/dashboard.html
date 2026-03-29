@@ -8,7 +8,6 @@
     <a href="{{ url_for('admin_add_term') }}" class="btn btn-primary">+ Add New Term</a>
 </section>
 
-<!-- Stats cards -->
 <div class="stats-grid">
     <div class="stat-card">
         <span class="stat-number">{{ total_terms }}</span>
@@ -20,7 +19,6 @@
     </div>
 </div>
 
-<!-- Pending Suggestions -->
 {% if suggestions %}
 <section class="admin-section">
     <h2>Pending Suggestions</h2>
@@ -43,9 +41,11 @@
             <p class="suggestion-date">{{ s.created_at.strftime('%b %d, %Y') }}</p>
             <div class="suggestion-actions">
                 <form method="POST" action="{{ url_for('admin_handle_suggestion', suggestion_id=s.id, action='approve') }}" style="display:inline;">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" class="btn btn-small btn-success">Approve & Add</button>
                 </form>
                 <form method="POST" action="{{ url_for('admin_handle_suggestion', suggestion_id=s.id, action='reject') }}" style="display:inline;">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" class="btn btn-small btn-danger">Reject</button>
                 </form>
             </div>
@@ -55,7 +55,6 @@
 </section>
 {% endif %}
 
-<!-- Recent Terms -->
 {% if recent_terms %}
 <section class="admin-section">
     <h2>Recently Added Terms</h2>
@@ -77,6 +76,7 @@
                 <td class="action-cell">
                     <a href="{{ url_for('admin_edit_term', term_id=term.id) }}" class="btn btn-small btn-outline">Edit</a>
                     <form method="POST" action="{{ url_for('admin_delete_term', term_id=term.id) }}" style="display:inline;" onsubmit="return confirm('Delete this term?');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <button type="submit" class="btn btn-small btn-danger">Delete</button>
                     </form>
                 </td>
