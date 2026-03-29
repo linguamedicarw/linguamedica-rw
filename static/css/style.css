@@ -1,5 +1,5 @@
 /*
- * Medical Dictionary EN↔RW — Stylesheet
+ * LinguaMedica RW — Stylesheet
  *
  * COLOR SCHEME:
  *   Primary:  Dark Red (#8B1A1A) — trust, medicine, authority
@@ -129,8 +129,7 @@ a:hover {
     font-size: 0.75rem;
 }
 
-/* Rwandan flag badge — horizontal stripes, deeply muted, yellow RW with white outline */
-/* Flag colors (deeply muted): blue (#15627F), yellow (#9E8400), green (#153D25) */
+/* Rwandan flag badge */
 .brand-rw {
     display: inline-block;
     background: linear-gradient(to bottom, #15627F 0%, #15627F 45%, #9E8400 45%, #9E8400 72.5%, #153D25 72.5%, #153D25 100%);
@@ -149,7 +148,7 @@ a:hover {
     top: -1px;
 }
 
-/* Hero version of the RW badge (larger, on the homepage title) */
+/* Hero version of the RW badge */
 .hero-rw {
     display: inline-block;
     background: linear-gradient(to bottom, #15627F 0%, #15627F 45%, #9E8400 45%, #9E8400 72.5%, #153D25 72.5%, #153D25 100%);
@@ -416,6 +415,24 @@ a:hover {
     border: 1px solid var(--color-border);
     border-radius: var(--radius);
     padding: 0.75rem 1rem;
+}
+
+/* Clickable term cards */
+.term-card-clickable {
+    cursor: pointer;
+    transition: border-color var(--transition), box-shadow var(--transition), transform var(--transition);
+    -webkit-tap-highlight-color: rgba(139, 26, 26, 0.1);
+}
+
+.term-card-clickable:hover {
+    border-color: var(--color-primary);
+    box-shadow: var(--shadow-md);
+    transform: translateY(-1px);
+}
+
+.term-card-clickable:active {
+    transform: translateY(0);
+    box-shadow: var(--shadow-sm);
 }
 
 .term-pair {
@@ -695,7 +712,6 @@ textarea.form-input {
     border-bottom: 2px solid var(--color-primary-bg);
 }
 
-/* Suggestion cards */
 .suggestion-card {
     background: var(--color-surface);
     border: 1px solid var(--color-border);
@@ -738,7 +754,6 @@ textarea.form-input {
     gap: 0.5rem;
 }
 
-/* Admin table */
 .admin-table {
     width: 100%;
     border-collapse: collapse;
@@ -789,6 +804,12 @@ textarea.form-input {
     margin-top: 0.35rem;
     opacity: 0.5;
     font-size: 0.8rem;
+}
+
+.footer-copyright {
+    margin-top: 0.25rem;
+    opacity: 0.4;
+    font-size: 0.75rem;
 }
 
 /* ----------------------------------------------------------------
