@@ -9,7 +9,6 @@
     <p class="hero-count">{{ total_count }} verified terms</p>
 </section>
 
-<!-- Search Section -->
 <section class="search-section">
     <div class="search-box">
         <input
@@ -22,24 +21,19 @@
         >
         <span class="search-hint" id="searchHint">Start typing to search instantly</span>
     </div>
-
-    <!-- Results appear here (populated by JavaScript) -->
     <div id="searchResults" class="results-container" style="display: none;"></div>
-
-    <!-- No results message -->
     <div id="noResults" class="no-results" style="display: none;">
         <p>No translations found for "<strong id="noResultsQuery"></strong>"</p>
         <p>Would you like to <a href="{{ url_for('suggest') }}">suggest this word</a> for review?</p>
     </div>
 </section>
 
-<!-- Recently Added Section -->
 {% if recent_terms %}
-<section class="recent-section">
+<section class="recent-section" id="recentSection">
     <h2>Recently Added</h2>
     <div class="recent-grid">
         {% for term in recent_terms %}
-        <div class="term-card term-card-small">
+        <div class="term-card term-card-small term-card-clickable" onclick="searchTerm('{{ term.english | e }}')">
             <div class="term-pair">
                 <span class="term-en">{{ term.english }}</span>
                 <span class="term-arrow">→</span>
@@ -57,48 +51,36 @@
 
 {% block scripts %}
 <script>
-    // ---------------------------------------------------------------
-    // CLIENT-SIDE INSTANT SEARCH
-    //
-    // WHY: All terms are loaded into the page as JSON.
-    // Searching happens in the browser — no server round-trip.
-    // This means:
-    //   - Instant results as you type
-    //   - Works even on slow connections (after initial page load)
-    //   - Zero server load for searches
-    //
-    // WHEN TO CHANGE: If you have 2000+ terms, switch to the
-    // /api/search endpoint with a debounced fetch() call.
-    // ---------------------------------------------------------------
-
     const allTerms = {{ terms_json | tojson }};
     const searchInput = document.getElementById('searchInput');
     const searchResults = document.getElementById('searchResults');
     const noResults = document.getElementById('noResults');
     const noResultsQuery = document.getElementById('noResultsQuery');
     const searchHint = document.getElementById('searchHint');
+    const recentSection = document.getElementById('recentSection');
 
     searchInput.addEventListener('input', function() {
-        const query = this.value.trim().toLowerCase();
+        performSearch(this.value);
+    });
 
+    function performSearch(value) {
+        const query = value.trim().toLowerCase();
         if (query.length < 2) {
             searchResults.style.display = 'none';
             noResults.style.display = 'none';
             searchHint.style.display = query.length === 0 ? 'block' : 'none';
+            if (recentSection) recentSection.style.display = '';
             return;
         }
-
         searchHint.style.display = 'none';
-
-        // Filter terms that match the query in English or Kinyarwanda
         const matches = allTerms.filter(term =>
             term.english.toLowerCase().includes(query) ||
             term.kinyarwanda.toLowerCase().includes(query)
         );
-
         if (matches.length > 0) {
             noResults.style.display = 'none';
             searchResults.style.display = 'block';
+            if (recentSection) recentSection.style.display = 'none';
             searchResults.innerHTML = matches.map(term => `
                 <div class="result-card">
                     <div class="result-header">
@@ -111,24 +93,28 @@
                     <div class="result-examples">
                         <p class="example"><span class="example-label">EN:</span> ${escapeHtml(term.example_en)}</p>
                         ${term.example_rw ? `<p class="example"><span class="example-label">RW:</span> ${escapeHtml(term.example_rw)}</p>` : ''}
-                    </div>
-                    ` : ''}
+                    </div>` : ''}
                     ${term.etymology ? `
                     <div class="result-etymology">
                         <p class="etymology-label">Why this translation?</p>
                         <p class="etymology-text">${escapeHtml(term.etymology)}</p>
-                    </div>
-                    ` : ''}
+                    </div>` : ''}
                 </div>
             `).join('');
         } else {
             searchResults.style.display = 'none';
             noResults.style.display = 'block';
-            noResultsQuery.textContent = this.value.trim();
+            if (recentSection) recentSection.style.display = 'none';
+            noResultsQuery.textContent = value.trim();
         }
-    });
+    }
 
-    // Prevent XSS by escaping HTML in user-generated content
+    function searchTerm(term) {
+        searchInput.value = term;
+        performSearch(term);
+        searchInput.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
     function escapeHtml(text) {
         if (!text) return '';
         const div = document.createElement('div');
