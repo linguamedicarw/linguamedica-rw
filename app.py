@@ -48,19 +48,27 @@ def create_app():
         """Flask-Login calls this to reload a user from their session."""
         return db.session.get(Admin, int(user_id))
 
-    # Create database tables if they don't exist
+    # Create database tables and auto-seed new terms
     with app.app_context():
         db.create_all()
-        # Auto-seed if database is empty (first run on new deployment)
-        if Term.query.count() == 0:
-            from seed_data import STARTER_TERMS, ADMIN_USERNAME, ADMIN_PASSWORD
-            for term_data in STARTER_TERMS:
+
+        # Auto-seed: add any new terms that don't exist yet (safe to run every deploy)
+        from seed_data import STARTER_TERMS, ADMIN_USERNAME, ADMIN_PASSWORD
+
+        added = 0
+        for term_data in STARTER_TERMS:
+            if not Term.query.filter_by(english=term_data["english"]).first():
                 db.session.add(Term(**term_data))
-            if not Admin.query.first():
-                admin = Admin(username=ADMIN_USERNAME)
-                admin.set_password(ADMIN_PASSWORD)
-                db.session.add(admin)
+                added += 1
+
+        if not Admin.query.filter_by(username=ADMIN_USERNAME).first():
+            admin = Admin(username=ADMIN_USERNAME)
+            admin.set_password(ADMIN_PASSWORD)
+            db.session.add(admin)
+
+        if added > 0:
             db.session.commit()
+            print(f"Auto-seed: added {added} new terms (total: {Term.query.count()})")
 
     # -------------------------------------------------------------------
     # PUBLIC ROUTES — What everyone can access
