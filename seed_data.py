@@ -15,8 +15,8 @@ from models import db, Term, Admin
 import os
 
 # ------ CONFIGURATION ------
-# Change these before running!
-ADMIN_USERNAME = "khris"
+# Both loaded from environment variables — never hardcode credentials
+ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "changeme-set-env-var")
 
 # ------ ALL TERMS ------
@@ -477,8 +477,6 @@ def seed():
         total = Term.query.count()
         print(f"✓ Added {added} new terms ({skipped} already existed)")
         print(f"\n  Total terms in dictionary: {total}")
-        print(f"\n⚠ Remember to change the admin password in seed_data.py!")
-        print(f"⚠ Admin login: /admin/login")
 
 
 if __name__ == "__main__":
