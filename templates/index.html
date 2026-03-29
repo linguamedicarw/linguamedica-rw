@@ -4,6 +4,7 @@
 
 {% block content %}
 <section class="hero">
+    <img src="{{ url_for('static', filename='images/logo.svg') }}" alt="LinguaMedica RW" class="hero-logo">
     <h1>LinguaMedica <span class="hero-rw">RW</span></h1>
     <p class="hero-subtitle">English ↔ Kinyarwanda · Curated medical translations for health professionals</p>
     <p class="hero-count">{{ total_count }} verified terms</p>
