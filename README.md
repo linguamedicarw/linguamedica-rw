@@ -10,6 +10,7 @@ A curated medical translation dictionary for English ↔ Kinyarwanda, built to s
 - **Curated translations** — Every entry is validated by a domain expert
 - **Example sentences** — See terms used in real medical contexts (both languages)
 - **Etymological explanations** — Understand *why* each translation works linguistically
+- **Provenance tracking** — Every term records who contributed it and where it came from
 - **Suggestion system** — Users can submit terms they need translated
 - **Admin dashboard** — Manage the dictionary, review suggestions
 - **JSON API** — Ready for mobile apps and integrations
@@ -65,7 +66,9 @@ linguamedica-rw/
 ├── requirements.txt    ← Python dependencies
 ├── Procfile            ← Production server config (Railway)
 ├── .env.example        ← Environment variable template
-├── LICENSE             ← MIT License
+├── LICENSE             ← MIT License (application code)
+├── LICENSE-DATA        ← CC BY 4.0 (dictionary data)
+├── CONTRIBUTORS.md     ← Intellectual credit for translations
 ├── templates/          ← HTML templates (Jinja2)
 │   ├── base.html       ← Shared layout
 │   ├── index.html      ← Homepage with search
@@ -109,6 +112,13 @@ LinguaMedica RW is part of ongoing research on terminology-constrained medical t
 
 **Christophe Mumaragishyika** — Fulbright Scholar, University of Missouri
 
+See [CONTRIBUTORS.md](CONTRIBUTORS.md) for detailed intellectual credit on translations and neologisms.
+
 ## License
 
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+This project uses a dual-license structure:
+
+- **Application code** (Flask app, templates, CSS, JavaScript): [MIT License](LICENSE)
+- **Dictionary data** (translations, examples, etymologies in seed_data.py): [CC BY 4.0](LICENSE-DATA) — attribution required
+
+Each term in the database includes `contributed_by` and `source` fields for per-entry provenance. See [CONTRIBUTORS.md](CONTRIBUTORS.md) for details.

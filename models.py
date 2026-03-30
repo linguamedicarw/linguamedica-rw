@@ -24,8 +24,13 @@ db = SQLAlchemy()
 class Term(db.Model):
     """
     A validated medical translation entry.
+
     Only the admin (you) can add these — this is what makes
     the dictionary trustworthy.
+
+    Provenance fields track who contributed each translation
+    and where it came from — essential for attribution under
+    the CC BY 4.0 data license.
     """
     __tablename__ = "terms"
 
@@ -33,9 +38,17 @@ class Term(db.Model):
     english = db.Column(db.String(200), nullable=False, index=True)
     kinyarwanda = db.Column(db.String(200), nullable=False)
     example_en = db.Column(db.Text, nullable=True)       # Example sentence in English
-    example_rw = db.Column(db.Text, nullable=True)       # Example sentence in Kinyarwanda
+    example_rw = db.Column(db.Text, nullable=True)        # Example sentence in Kinyarwanda
     etymology = db.Column(db.Text, nullable=True)         # Why this translation makes sense
     category = db.Column(db.String(100), nullable=True)   # e.g., "Anatomy", "Disease", "Procedure"
+
+    # --- Provenance fields ---
+    contributed_by = db.Column(db.String(200), nullable=True,
+                               default="Christophe Mumaragishyika")
+    source = db.Column(db.String(300), nullable=True)     # e.g., "Annie Chibwe consent form"
+    date_added = db.Column(db.DateTime, nullable=True,
+                           default=lambda: datetime.now(timezone.utc))
+
     created_at = db.Column(
         db.DateTime,
         default=lambda: datetime.now(timezone.utc)
@@ -51,6 +64,9 @@ class Term(db.Model):
             "example_rw": self.example_rw,
             "etymology": self.etymology,
             "category": self.category,
+            "contributed_by": self.contributed_by,
+            "source": self.source,
+            "date_added": self.date_added.isoformat() if self.date_added else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 

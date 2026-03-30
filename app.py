@@ -15,6 +15,7 @@ Security features:
 """
 
 import os
+import sqlite3
 from flask import (
     Flask, render_template, request, redirect,
     url_for, flash, jsonify
@@ -28,6 +29,32 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from config import Config
 from models import db, Term, Suggestion, Admin
+
+
+# ---------------------------------------------------------------------------
+# Database Migration — Add provenance columns to existing terms table
+# ---------------------------------------------------------------------------
+def migrate_add_provenance_columns(app):
+    """Add contributed_by, source, and date_added columns if they don't exist."""
+    db_uri = app.config['SQLALCHEMY_DATABASE_URI']
+    if not db_uri.startswith('sqlite'):
+        return
+    db_path = db_uri.replace('sqlite:///', '')
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA table_info(terms)")
+    existing = {row[1] for row in cursor.fetchall()}
+    if 'contributed_by' not in existing:
+        cursor.execute(
+            "ALTER TABLE terms ADD COLUMN contributed_by VARCHAR(200) "
+            "DEFAULT 'Christophe Mumaragishyika'"
+        )
+    if 'source' not in existing:
+        cursor.execute("ALTER TABLE terms ADD COLUMN source VARCHAR(300)")
+    if 'date_added' not in existing:
+        cursor.execute("ALTER TABLE terms ADD COLUMN date_added DATETIME")
+    conn.commit()
+    conn.close()
 
 
 # ---------------------------------------------------------------------------
@@ -80,9 +107,10 @@ def create_app():
         flash("Too many login attempts. Please wait a minute and try again.", "danger")
         return render_template("admin/login.html"), 429
 
-    # Create database tables and auto-seed new terms
+    # Create database tables, migrate, and auto-seed new terms
     with app.app_context():
         db.create_all()
+        migrate_add_provenance_columns(app)
 
         from seed_data import STARTER_TERMS, ADMIN_USERNAME, ADMIN_PASSWORD
 
