@@ -123,6 +123,12 @@ a:hover {
     font-size: 1.4rem;
 }
 
+.brand-logo {
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+}
+
 .brand-text small {
     font-weight: 400;
     opacity: 0.8;
@@ -200,6 +206,14 @@ a:hover {
 .hero {
     text-align: center;
     padding: 2.5rem 0 1.5rem;
+}
+
+.hero-logo {
+    display: block;
+    width: 80px;
+    height: 80px;
+    margin: 0 auto 0.75rem;
+    filter: drop-shadow(0 2px 8px rgba(139, 26, 26, 0.2));
 }
 
 .hero h1 {
@@ -824,6 +838,11 @@ textarea.form-input {
     .nav-links {
         gap: 0.75rem;
         font-size: 0.85rem;
+    }
+
+    .hero-logo {
+        width: 64px;
+        height: 64px;
     }
 
     .hero h1 {
