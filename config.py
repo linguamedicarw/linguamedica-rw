@@ -26,13 +26,15 @@ class Config:
     # Database URL — this is the magic line for scalability:
     # - Locally: defaults to SQLite (a single file, zero setup)
     # - In production: set DATABASE_URL=postgresql://... and everything just works
-    # Railway sometimes provides 'postgres://' but SQLAlchemy requires 'postgresql://'
+    # Use psycopg3 driver for PostgreSQL (bundles its own libpq)
     _raw_db_url = os.environ.get(
         "DATABASE_URL",
         f"sqlite:///{os.path.join(basedir, 'instance', 'dictionary.db')}"
     )
     if _raw_db_url.startswith("postgres://"):
-        _raw_db_url = _raw_db_url.replace("postgres://", "postgresql://", 1)
+        _raw_db_url = _raw_db_url.replace("postgres://", "postgresql+psycopg://", 1)
+    elif _raw_db_url.startswith("postgresql://"):
+        _raw_db_url = _raw_db_url.replace("postgresql://", "postgresql+psycopg://", 1)
     SQLALCHEMY_DATABASE_URI = _raw_db_url
 
     # Suppress a warning from SQLAlchemy we don't need
