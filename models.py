@@ -88,9 +88,11 @@ class Suggestion(db.Model):
     submitter_email = db.Column(db.String(200), nullable=True)
     status = db.Column(
         db.String(20),
-        default="pending"  # pending → approved → added, or rejected
+        default="pending"  # pending, approved, rejected
     )
     admin_notes = db.Column(db.Text, nullable=True)        # Your notes on the suggestion
+    resolved = db.Column(db.Boolean, default=False)         # Stays in active panel until True
+    resolved_at = db.Column(db.DateTime, nullable=True)     # When you marked it resolved
     created_at = db.Column(
         db.DateTime,
         default=lambda: datetime.now(timezone.utc)
@@ -98,6 +100,30 @@ class Suggestion(db.Model):
 
     def __repr__(self):
         return f"<Suggestion: {self.english_word} ({self.status})>"
+
+
+class SearchLog(db.Model):
+    """
+    Logs every search query made on the site.
+
+    This data tells you:
+    - What people are actually looking for
+    - Which searches returned zero results (= terms you should add next)
+    - How search volume grows over time
+    """
+    __tablename__ = "search_logs"
+
+    id = db.Column(db.Integer, primary_key=True)
+    query_text = db.Column(db.String(300), nullable=False, index=True)
+    results_count = db.Column(db.Integer, default=0)
+    source = db.Column(db.String(20), default="web")   # "web" (public page) or "api"
+    searched_at = db.Column(
+        db.DateTime,
+        default=lambda: datetime.now(timezone.utc)
+    )
+
+    def __repr__(self):
+        return f"<SearchLog: '{self.query_text}' ({self.results_count} results)>"
 
 
 class Admin(UserMixin, db.Model):

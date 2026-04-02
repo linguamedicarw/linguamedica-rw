@@ -64,6 +64,20 @@
         performSearch(this.value);
     });
 
+    /* --- Search logging (debounced — fires 800ms after typing stops) --- */
+    let logTimer = null;
+    function logSearch(query, resultsCount) {
+        clearTimeout(logTimer);
+        if (!query || query.length < 2) return;
+        logTimer = setTimeout(function() {
+            fetch('/api/log-search', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ query: query, results_count: resultsCount })
+            }).catch(function() { /* silent — logging should never break search */ });
+        }, 800);
+    }
+
     function performSearch(value) {
         const query = value.trim().toLowerCase();
         if (query.length < 2) {
@@ -78,6 +92,8 @@
             term.english.toLowerCase().includes(query) ||
             term.kinyarwanda.toLowerCase().includes(query)
         );
+        /* Log this search (debounced) */
+        logSearch(query, matches.length);
         if (matches.length > 0) {
             noResults.style.display = 'none';
             searchResults.style.display = 'block';

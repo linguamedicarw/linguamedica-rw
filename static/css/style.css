@@ -683,7 +683,7 @@ textarea.form-input {
 
 .stats-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr 1fr 1fr;
     gap: 1rem;
     margin-bottom: 2rem;
 }
@@ -766,6 +766,65 @@ textarea.form-input {
     margin-top: 0.75rem;
     display: flex;
     gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+/* --- Status badges --- */
+.status-badge {
+    display: inline-block;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 0.15rem 0.5rem;
+    border-radius: 1rem;
+    margin-left: auto;
+}
+
+.status-pending {
+    background: var(--color-warning-bg);
+    color: var(--color-warning);
+}
+
+.status-approved {
+    background: var(--color-success-bg);
+    color: var(--color-success);
+}
+
+.status-rejected {
+    background: var(--color-danger-bg);
+    color: var(--color-danger);
+}
+
+/* --- Resolve button --- */
+.btn-resolve {
+    background: var(--color-info);
+    color: #fff;
+    border: 1px solid var(--color-info);
+}
+
+.btn-resolve:hover {
+    background: #0D47A1;
+    border-color: #0D47A1;
+}
+
+/* --- Resolved archive --- */
+.archive-toggle {
+    cursor: pointer;
+    user-select: none;
+}
+
+.archive-toggle:hover h2 {
+    color: var(--color-primary);
+}
+
+.suggestion-card-resolved {
+    opacity: 0.7;
+    border-style: dashed;
+}
+
+.suggestion-card-resolved:hover {
+    opacity: 1;
 }
 
 .admin-table {

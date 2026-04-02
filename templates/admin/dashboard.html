@@ -13,15 +13,96 @@
         <span class="stat-number">{{ total_terms }}</span>
         <span class="stat-label">Total Terms</span>
     </div>
-    <div class="stat-card stat-card-alert">
+    <div class="stat-card {% if pending_count > 0 %}stat-card-alert{% endif %}">
         <span class="stat-number">{{ pending_count }}</span>
-        <span class="stat-label">Pending Suggestions</span>
+        <span class="stat-label">Active Suggestions</span>
+    </div>
+    <div class="stat-card">
+        <span class="stat-number">{{ total_searches }}</span>
+        <span class="stat-label">Total Searches</span>
     </div>
 </div>
 
+<!-- ============================================================
+     TERMS PEOPLE CAN'T FIND — priority queue for new terms
+     ============================================================ -->
+{% if no_results_queries %}
+<section class="admin-section">
+    <h2>🔍 Terms People Can't Find</h2>
+    <p style="font-size: 0.85rem; color: var(--color-text-muted); margin-top: -0.5rem; margin-bottom: 1rem;">
+        Queries that returned zero results — ranked by how often they were searched. Your priority list for new terms.
+    </p>
+    <table class="admin-table">
+        <thead>
+            <tr>
+                <th style="width: 60%;">Query</th>
+                <th style="width: 20%;">Times Searched</th>
+                <th style="width: 20%;">Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in no_results_queries %}
+            <tr>
+                <td><strong>{{ row.query_text }}</strong></td>
+                <td>{{ row.search_count }}</td>
+                <td>
+                    <a href="{{ url_for('admin_add_term', english=row.query_text) }}" class="btn btn-small btn-success">+ Add</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endif %}
+
+<!-- ============================================================
+     TOP SEARCHES — collapsed by default
+     ============================================================ -->
+{% if top_queries %}
+<section class="admin-section">
+    <div class="archive-toggle" onclick="toggleTopSearches()">
+        <h2 style="margin-bottom: 0; border-bottom: none; cursor: pointer;">
+            <span id="topSearchArrow">▶</span> Top Searches ({{ top_queries|length }})
+        </h2>
+    </div>
+    <div id="topSearches" style="display: none; margin-top: 1rem;">
+        <table class="admin-table">
+            <thead>
+                <tr>
+                    <th>Query</th>
+                    <th>Times Searched</th>
+                    <th>Has Results?</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in top_queries %}
+                <tr>
+                    <td>{{ row.query_text }}</td>
+                    <td>{{ row.search_count }}</td>
+                    <td>
+                        {% if row.min_results > 0 %}
+                            <span style="color: var(--color-success);">✓ Yes</span>
+                        {% else %}
+                            <span style="color: var(--color-danger);">✗ No</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endif %}
+
+<!-- ============================================================
+     ACTIVE SUGGESTIONS — stays here until YOU mark it resolved
+     ============================================================ -->
 {% if suggestions %}
 <section class="admin-section">
-    <h2>Pending Suggestions</h2>
+    <h2>Active Suggestions</h2>
+    <p style="font-size: 0.85rem; color: var(--color-text-muted); margin-top: -0.5rem; margin-bottom: 1rem;">
+        Suggestions stay here until you mark them resolved. "Approve &amp; Add" opens the form — cancelling it won't remove anything.
+    </p>
     <div class="suggestion-list">
         {% for s in suggestions %}
         <div class="suggestion-card">
@@ -31,6 +112,14 @@
                     <span class="suggestion-arrow">→</span>
                     <span class="suggestion-trans">{{ s.suggested_translation }}</span>
                 {% endif %}
+                <!-- Status badge -->
+                {% if s.status == 'rejected' %}
+                    <span class="status-badge status-rejected">Rejected</span>
+                {% elif s.status == 'approved' %}
+                    <span class="status-badge status-approved">Approved</span>
+                {% else %}
+                    <span class="status-badge status-pending">Pending</span>
+                {% endif %}
             </div>
             {% if s.context %}
                 <p class="suggestion-context">{{ s.context }}</p>
@@ -39,14 +128,26 @@
                 <p class="suggestion-email">From: {{ s.submitter_email }}</p>
             {% endif %}
             <p class="suggestion-date">{{ s.created_at.strftime('%b %d, %Y') }}</p>
+
             <div class="suggestion-actions">
+                <!-- Approve & Add: just opens the form pre-filled, no side effects -->
                 <form method="POST" action="{{ url_for('admin_handle_suggestion', suggestion_id=s.id, action='approve') }}" style="display:inline;">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button type="submit" class="btn btn-small btn-success">Approve & Add</button>
+                    <button type="submit" class="btn btn-small btn-success">Approve &amp; Add</button>
                 </form>
+                <!-- Reject: marks as rejected but keeps it visible -->
+                {% if s.status != 'rejected' %}
                 <form method="POST" action="{{ url_for('admin_handle_suggestion', suggestion_id=s.id, action='reject') }}" style="display:inline;">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" class="btn btn-small btn-danger">Reject</button>
+                </form>
+                {% endif %}
+                <!-- Resolve: the ONLY way to move a suggestion out of this panel -->
+                <form method="POST" action="{{ url_for('admin_resolve_suggestion', suggestion_id=s.id) }}" style="display:inline;">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-small btn-resolve" onclick="return confirm('Mark &quot;{{ s.english_word }}&quot; as resolved? It will move to the archive.');">
+                        ✓ Resolved
+                    </button>
                 </form>
             </div>
         </div>
@@ -55,6 +156,59 @@
 </section>
 {% endif %}
 
+<!-- ============================================================
+     RESOLVED ARCHIVE — collapsed by default
+     ============================================================ -->
+{% if resolved_suggestions %}
+<section class="admin-section">
+    <div class="archive-toggle" onclick="toggleArchive()">
+        <h2 style="margin-bottom: 0; border-bottom: none; cursor: pointer;">
+            <span id="archiveArrow">▶</span> Resolved Archive ({{ resolved_suggestions|length }})
+        </h2>
+    </div>
+    <div id="resolvedArchive" style="display: none;">
+        <div class="suggestion-list" style="margin-top: 1rem;">
+            {% for s in resolved_suggestions %}
+            <div class="suggestion-card suggestion-card-resolved">
+                <div class="suggestion-header">
+                    <strong>{{ s.english_word }}</strong>
+                    {% if s.suggested_translation %}
+                        <span class="suggestion-arrow">→</span>
+                        <span class="suggestion-trans">{{ s.suggested_translation }}</span>
+                    {% endif %}
+                    {% if s.status == 'rejected' %}
+                        <span class="status-badge status-rejected">Rejected</span>
+                    {% elif s.status == 'approved' %}
+                        <span class="status-badge status-approved">Approved</span>
+                    {% else %}
+                        <span class="status-badge status-pending">Pending</span>
+                    {% endif %}
+                </div>
+                {% if s.context %}
+                    <p class="suggestion-context">{{ s.context }}</p>
+                {% endif %}
+                <p class="suggestion-date">
+                    Submitted {{ s.created_at.strftime('%b %d, %Y') }}
+                    {% if s.resolved_at %}
+                     · Resolved {{ s.resolved_at.strftime('%b %d, %Y') }}
+                    {% endif %}
+                </p>
+                <div class="suggestion-actions">
+                    <form method="POST" action="{{ url_for('admin_unresolve_suggestion', suggestion_id=s.id) }}" style="display:inline;">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="btn btn-small btn-outline">↩ Restore to Active</button>
+                    </form>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+{% endif %}
+
+<!-- ============================================================
+     ALL TERMS TABLE
+     ============================================================ -->
 <section class="admin-section">
     <h2>All Terms ({{ total_terms }})</h2>
     <div style="margin-bottom: 1rem;">
@@ -98,6 +252,7 @@
 </section>
 
 <script>
+/* Term table filter */
 document.getElementById('termFilter').addEventListener('input', function() {
     const filter = this.value.toLowerCase();
     const rows = document.querySelectorAll('#allTermsTable tbody tr');
@@ -116,5 +271,31 @@ document.getElementById('termFilter').addEventListener('input', function() {
     });
     document.getElementById('visibleCount').textContent = visible;
 });
+
+/* Resolved archive toggle */
+function toggleArchive() {
+    const archive = document.getElementById('resolvedArchive');
+    const arrow = document.getElementById('archiveArrow');
+    if (archive.style.display === 'none') {
+        archive.style.display = 'block';
+        arrow.textContent = '▼';
+    } else {
+        archive.style.display = 'none';
+        arrow.textContent = '▶';
+    }
+}
+
+/* Top searches toggle */
+function toggleTopSearches() {
+    const panel = document.getElementById('topSearches');
+    const arrow = document.getElementById('topSearchArrow');
+    if (panel.style.display === 'none') {
+        panel.style.display = 'block';
+        arrow.textContent = '▼';
+    } else {
+        panel.style.display = 'none';
+        arrow.textContent = '▶';
+    }
+}
 </script>
 {% endblock %}

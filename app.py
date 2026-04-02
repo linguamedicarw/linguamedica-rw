@@ -16,6 +16,7 @@ Security features:
 
 import os
 import sqlite3
+from datetime import datetime, timezone
 from flask import (
     Flask, render_template, request, redirect,
     url_for, flash, jsonify
@@ -28,7 +29,8 @@ from flask_wtf.csrf import CSRFProtect
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from config import Config
-from models import db, Term, Suggestion, Admin
+from models import db, Term, Suggestion, SearchLog, Admin
+from sqlalchemy import func
 
 
 # ---------------------------------------------------------------------------
@@ -53,6 +55,28 @@ def migrate_add_provenance_columns(app):
         cursor.execute("ALTER TABLE terms ADD COLUMN source VARCHAR(300)")
     if 'date_added' not in existing:
         cursor.execute("ALTER TABLE terms ADD COLUMN date_added DATETIME")
+    conn.commit()
+    conn.close()
+
+
+def migrate_add_suggestion_resolved(app):
+    """Add resolved and resolved_at columns to suggestions if they don't exist."""
+    db_uri = app.config['SQLALCHEMY_DATABASE_URI']
+    if not db_uri.startswith('sqlite'):
+        return
+    db_path = db_uri.replace('sqlite:///', '')
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA table_info(suggestions)")
+    existing = {row[1] for row in cursor.fetchall()}
+    if 'resolved' not in existing:
+        cursor.execute(
+            "ALTER TABLE suggestions ADD COLUMN resolved BOOLEAN DEFAULT 0"
+        )
+    if 'resolved_at' not in existing:
+        cursor.execute(
+            "ALTER TABLE suggestions ADD COLUMN resolved_at DATETIME"
+        )
     conn.commit()
     conn.close()
 
@@ -111,6 +135,7 @@ def create_app():
     with app.app_context():
         db.create_all()
         migrate_add_provenance_columns(app)
+        migrate_add_suggestion_resolved(app)
 
         from seed_data import STARTER_TERMS, ADMIN_USERNAME, ADMIN_PASSWORD
 
@@ -182,7 +207,36 @@ def create_app():
                 Term.kinyarwanda.ilike(f"%{query}%")
             )
         ).all()
+        # Log the API search
+        log = SearchLog(
+            query_text=query,
+            results_count=len(results),
+            source="api"
+        )
+        db.session.add(log)
+        db.session.commit()
         return jsonify([t.to_dict() for t in results])
+
+    @app.route("/api/log-search", methods=["POST"])
+    @csrf.exempt
+    def api_log_search():
+        """
+        Called by the public search page JS (debounced).
+        Logs the query and how many results it returned.
+        """
+        data = request.get_json(silent=True) or {}
+        query = (data.get("query") or "").strip().lower()
+        results_count = data.get("results_count", 0)
+        if not query or len(query) < 2:
+            return jsonify({"ok": True})
+        log = SearchLog(
+            query_text=query,
+            results_count=int(results_count),
+            source="web"
+        )
+        db.session.add(log)
+        db.session.commit()
+        return jsonify({"ok": True})
 
     # -------------------------------------------------------------------
     # ADMIN ROUTES
@@ -220,16 +274,46 @@ def create_app():
     @login_required
     def admin_dashboard():
         total_terms = Term.query.count()
-        pending = Suggestion.query.filter_by(status="pending").count()
-        suggestions = Suggestion.query.filter_by(status="pending") \
+        # Active = not yet resolved (regardless of status)
+        active_suggestions = Suggestion.query.filter_by(resolved=False) \
             .order_by(Suggestion.created_at.desc()).all()
+        # Resolved archive
+        resolved_suggestions = Suggestion.query.filter_by(resolved=True) \
+            .order_by(Suggestion.resolved_at.desc()).all()
         all_terms = Term.query.order_by(Term.english.asc()).all()
+
+        # --- Search analytics ---
+        total_searches = SearchLog.query.count()
+
+        # Top searched queries (all time, top 15)
+        top_queries = db.session.query(
+            SearchLog.query_text,
+            func.count(SearchLog.id).label("search_count"),
+            func.min(SearchLog.results_count).label("min_results")
+        ).group_by(SearchLog.query_text).order_by(
+            func.count(SearchLog.id).desc()
+        ).limit(15).all()
+
+        # "No results" queries — your priority list for new terms
+        no_results_queries = db.session.query(
+            SearchLog.query_text,
+            func.count(SearchLog.id).label("search_count")
+        ).filter(
+            SearchLog.results_count == 0
+        ).group_by(SearchLog.query_text).order_by(
+            func.count(SearchLog.id).desc()
+        ).limit(20).all()
+
         return render_template(
             "admin/dashboard.html",
             total_terms=total_terms,
-            pending_count=pending,
-            suggestions=suggestions,
+            pending_count=len(active_suggestions),
+            suggestions=active_suggestions,
+            resolved_suggestions=resolved_suggestions,
             all_terms=all_terms,
+            total_searches=total_searches,
+            top_queries=top_queries,
+            no_results_queries=no_results_queries,
         )
 
     @app.route("/admin/add", methods=["GET", "POST"])
@@ -281,13 +365,8 @@ def create_app():
     def admin_handle_suggestion(suggestion_id, action):
         suggestion = Suggestion.query.get_or_404(suggestion_id)
         if action == "approve":
-            suggestion.status = "approved"
-            db.session.commit()
-            flash(
-                f'Suggestion "{suggestion.english_word}" approved. '
-                f'Now add it as a term.',
-                "success"
-            )
+            # Just open the add-term form pre-filled — don't change status
+            # The suggestion stays in the active panel untouched
             return redirect(url_for(
                 "admin_add_term",
                 english=suggestion.english_word,
@@ -296,7 +375,35 @@ def create_app():
         elif action == "reject":
             suggestion.status = "rejected"
             db.session.commit()
-            flash(f'Suggestion "{suggestion.english_word}" has been rejected.', "info")
+            flash(f'"{suggestion.english_word}" marked as rejected.', "info")
+        return redirect(url_for("admin_dashboard"))
+
+    @app.route("/admin/suggestion/<int:suggestion_id>/resolve", methods=["POST"])
+    @login_required
+    def admin_resolve_suggestion(suggestion_id):
+        """Mark a suggestion as resolved — moves it to the archive."""
+        suggestion = Suggestion.query.get_or_404(suggestion_id)
+        suggestion.resolved = True
+        suggestion.resolved_at = datetime.now(timezone.utc)
+        db.session.commit()
+        flash(
+            f'"{suggestion.english_word}" resolved and moved to archive.',
+            "success"
+        )
+        return redirect(url_for("admin_dashboard"))
+
+    @app.route("/admin/suggestion/<int:suggestion_id>/unresolve", methods=["POST"])
+    @login_required
+    def admin_unresolve_suggestion(suggestion_id):
+        """Restore a resolved suggestion back to the active panel."""
+        suggestion = Suggestion.query.get_or_404(suggestion_id)
+        suggestion.resolved = False
+        suggestion.resolved_at = None
+        db.session.commit()
+        flash(
+            f'"{suggestion.english_word}" restored to active suggestions.',
+            "info"
+        )
         return redirect(url_for("admin_dashboard"))
 
     return app
