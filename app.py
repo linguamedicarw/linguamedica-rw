@@ -223,13 +223,13 @@ def create_app():
         pending = Suggestion.query.filter_by(status="pending").count()
         suggestions = Suggestion.query.filter_by(status="pending") \
             .order_by(Suggestion.created_at.desc()).all()
-        recent_terms = Term.query.order_by(Term.created_at.desc()).limit(5).all()
+        all_terms = Term.query.order_by(Term.english.asc()).all()
         return render_template(
             "admin/dashboard.html",
             total_terms=total_terms,
             pending_count=pending,
             suggestions=suggestions,
-            recent_terms=recent_terms,
+            all_terms=all_terms,
         )
 
     @app.route("/admin/add", methods=["GET", "POST"])

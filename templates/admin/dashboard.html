@@ -55,27 +55,38 @@
 </section>
 {% endif %}
 
-{% if recent_terms %}
 <section class="admin-section">
-    <h2>Recently Added Terms</h2>
-    <table class="admin-table">
+    <h2>All Terms ({{ total_terms }})</h2>
+    <div style="margin-bottom: 1rem;">
+        <input type="text" id="termFilter" placeholder="Search terms by English or Kinyarwanda..." 
+               style="width: 100%; padding: 0.75rem 1rem; font-size: 1rem; border: 2px solid #ddd; border-radius: 8px; outline: none;"
+               onfocus="this.style.borderColor='#8B1A1A'" onblur="this.style.borderColor='#ddd'">
+    </div>
+    <div style="margin-bottom: 0.75rem; color: #666; font-size: 0.9rem;">
+        <span id="visibleCount">{{ total_terms }}</span> terms shown
+    </div>
+    <table class="admin-table" id="allTermsTable">
         <thead>
             <tr>
+                <th>ID</th>
                 <th>English</th>
                 <th>Kinyarwanda</th>
                 <th>Category</th>
+                <th>Source</th>
                 <th>Actions</th>
             </tr>
         </thead>
         <tbody>
-            {% for term in recent_terms %}
+            {% for term in all_terms %}
             <tr>
-                <td>{{ term.english }}</td>
+                <td style="color: #999; font-size: 0.85rem;">{{ term.id }}</td>
+                <td><strong>{{ term.english }}</strong></td>
                 <td>{{ term.kinyarwanda }}</td>
                 <td>{{ term.category or '—' }}</td>
+                <td style="font-size: 0.85rem; color: #666;">{{ term.source or '—' }}</td>
                 <td class="action-cell">
                     <a href="{{ url_for('admin_edit_term', term_id=term.id) }}" class="btn btn-small btn-outline">Edit</a>
-                    <form method="POST" action="{{ url_for('admin_delete_term', term_id=term.id) }}" style="display:inline;" onsubmit="return confirm('Delete this term?');">
+                    <form method="POST" action="{{ url_for('admin_delete_term', term_id=term.id) }}" style="display:inline;" onsubmit="return confirm('Delete {{ term.english }}?');">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <button type="submit" class="btn btn-small btn-danger">Delete</button>
                     </form>
@@ -85,5 +96,25 @@
         </tbody>
     </table>
 </section>
-{% endif %}
+
+<script>
+document.getElementById('termFilter').addEventListener('input', function() {
+    const filter = this.value.toLowerCase();
+    const rows = document.querySelectorAll('#allTermsTable tbody tr');
+    let visible = 0;
+    rows.forEach(function(row) {
+        const english = row.cells[1].textContent.toLowerCase();
+        const kinyarwanda = row.cells[2].textContent.toLowerCase();
+        const category = row.cells[3].textContent.toLowerCase();
+        const source = row.cells[4].textContent.toLowerCase();
+        if (english.includes(filter) || kinyarwanda.includes(filter) || category.includes(filter) || source.includes(filter)) {
+            row.style.display = '';
+            visible++;
+        } else {
+            row.style.display = 'none';
+        }
+    });
+    document.getElementById('visibleCount').textContent = visible;
+});
+</script>
 {% endblock %}
