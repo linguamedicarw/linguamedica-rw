@@ -64,18 +64,18 @@
         performSearch(this.value);
     });
 
-    /* --- Search logging (debounced — fires 800ms after typing stops) --- */
+    /* --- Search logging (debounced — fires 1.5s after typing stops, 4+ chars only) --- */
     let logTimer = null;
     function logSearch(query, resultsCount) {
         clearTimeout(logTimer);
-        if (!query || query.length < 2) return;
+        if (!query || query.length < 4) return;
         logTimer = setTimeout(function() {
             fetch('/api/log-search', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ query: query, results_count: resultsCount })
             }).catch(function() { /* silent — logging should never break search */ });
-        }, 800);
+        }, 1500);
     }
 
     function performSearch(value) {
