@@ -22,6 +22,11 @@
         >
         <span class="search-hint" id="searchHint">Start typing to search instantly</span>
     </div>
+
+    <!-- Category filter tags — built dynamically from term data -->
+    <div class="category-filter" id="categoryFilter"></div>
+    <div class="filter-status" id="filterStatus" style="display: none;"></div>
+
     <div id="searchResults" class="results-container" style="display: none;"></div>
     <div id="noResults" class="no-results" style="display: none;">
         <p>No translations found for "<strong id="noResultsQuery"></strong>"</p>
@@ -59,46 +64,109 @@
     const noResultsQuery = document.getElementById('noResultsQuery');
     const searchHint = document.getElementById('searchHint');
     const recentSection = document.getElementById('recentSection');
+    const categoryFilter = document.getElementById('categoryFilter');
+    const filterStatus = document.getElementById('filterStatus');
 
-    searchInput.addEventListener('input', function() {
-        performSearch(this.value);
-    });
+    let activeCategory = null;
 
-    /* --- Search logging (debounced — fires 1.5s after typing stops, 4+ chars only) --- */
-    let logTimer = null;
-    function logSearch(query, resultsCount) {
-        clearTimeout(logTimer);
-        if (!query || query.length < 4) return;
-        logTimer = setTimeout(function() {
-            fetch('/api/log-search', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ query: query, results_count: resultsCount })
-            }).catch(function() { /* silent — logging should never break search */ });
-        }, 1500);
+    /* --- Build category tags dynamically --- */
+    function buildCategoryTags() {
+        var counts = {};
+        allTerms.forEach(function(term) {
+            var cat = term.category || 'Uncategorized';
+            counts[cat] = (counts[cat] || 0) + 1;
+        });
+
+        var categories = Object.keys(counts).sort();
+
+        /* "All" tag first */
+        var allTag = document.createElement('span');
+        allTag.className = 'category-tag active';
+        allTag.textContent = 'All';
+        allTag.setAttribute('data-category', '');
+        allTag.addEventListener('click', function() { selectCategory(null); });
+        categoryFilter.appendChild(allTag);
+
+        /* Individual category tags */
+        categories.forEach(function(cat) {
+            var tag = document.createElement('span');
+            tag.className = 'category-tag';
+            tag.setAttribute('data-category', cat);
+            tag.innerHTML = escapeHtml(cat) + '<span class="category-tag-count">' + counts[cat] + '</span>';
+            tag.addEventListener('click', function() { selectCategory(cat); });
+            categoryFilter.appendChild(tag);
+        });
     }
 
-    function performSearch(value) {
-        const query = value.trim().toLowerCase();
-        if (query.length < 2) {
+    /* --- Select/deselect a category --- */
+    function selectCategory(category) {
+        activeCategory = category;
+
+        /* Update active tag styling */
+        var tags = categoryFilter.querySelectorAll('.category-tag');
+        tags.forEach(function(tag) {
+            var tagCat = tag.getAttribute('data-category');
+            if (category === null && tagCat === '') {
+                tag.classList.add('active');
+            } else if (tagCat === category) {
+                tag.classList.add('active');
+            } else {
+                tag.classList.remove('active');
+            }
+        });
+
+        /* Trigger a fresh search/filter */
+        updateResults();
+    }
+
+    /* --- Main search + filter logic --- */
+    function updateResults() {
+        var query = searchInput.value.trim().toLowerCase();
+        var hasQuery = query.length >= 2;
+        var hasCategory = activeCategory !== null;
+
+        /* Nothing active — show default state */
+        if (!hasQuery && !hasCategory) {
             searchResults.style.display = 'none';
             noResults.style.display = 'none';
-            searchHint.style.display = query.length === 0 ? 'block' : 'none';
+            filterStatus.style.display = 'none';
+            searchHint.style.display = 'block';
             if (recentSection) recentSection.style.display = '';
             return;
         }
+
         searchHint.style.display = 'none';
-        const matches = allTerms.filter(term =>
-            term.english.toLowerCase().includes(query) ||
-            term.kinyarwanda.toLowerCase().includes(query)
-        );
-        /* Log this search (debounced) */
-        logSearch(query, matches.length);
+
+        /* Filter terms */
+        var matches = allTerms.filter(function(term) {
+            var matchesCategory = !hasCategory || (term.category || 'Uncategorized') === activeCategory;
+            var matchesQuery = !hasQuery ||
+                term.english.toLowerCase().includes(query) ||
+                term.kinyarwanda.toLowerCase().includes(query);
+            return matchesCategory && matchesQuery;
+        });
+
+        /* Log search (debounced, only for text queries) */
+        if (hasQuery) {
+            logSearch(query, matches.length);
+        }
+
+        /* Update filter status */
+        if (hasCategory) {
+            filterStatus.style.display = 'block';
+            filterStatus.innerHTML = 'Showing <strong>' + matches.length + '</strong> term' +
+                (matches.length !== 1 ? 's' : '') + ' in <strong>' + escapeHtml(activeCategory) + '</strong>';
+        } else {
+            filterStatus.style.display = 'none';
+        }
+
+        /* Display results */
         if (matches.length > 0) {
             noResults.style.display = 'none';
             searchResults.style.display = 'block';
             if (recentSection) recentSection.style.display = 'none';
-            searchResults.innerHTML = matches.map(term => `
+            searchResults.innerHTML = matches.map(function(term) {
+                return `
                 <div class="result-card">
                     <div class="result-header">
                         <h3 class="result-english">${escapeHtml(term.english)}</h3>
@@ -116,19 +184,46 @@
                         <p class="etymology-label">Why this translation?</p>
                         <p class="etymology-text">${escapeHtml(term.etymology)}</p>
                     </div>` : ''}
-                </div>
-            `).join('');
+                </div>`;
+            }).join('');
         } else {
             searchResults.style.display = 'none';
-            noResults.style.display = 'block';
             if (recentSection) recentSection.style.display = 'none';
-            noResultsQuery.textContent = value.trim();
+            if (hasQuery) {
+                noResults.style.display = 'block';
+                noResultsQuery.textContent = searchInput.value.trim();
+            } else {
+                noResults.style.display = 'none';
+            }
         }
     }
 
+    searchInput.addEventListener('input', function() {
+        updateResults();
+    });
+
+    /* --- Search logging (debounced — fires 1.5s after typing stops, 4+ chars only) --- */
+    let logTimer = null;
+    function logSearch(query, resultsCount) {
+        clearTimeout(logTimer);
+        if (!query || query.length < 4) return;
+        logTimer = setTimeout(function() {
+            fetch('/api/log-search', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ query: query, results_count: resultsCount })
+            }).catch(function() { /* silent — logging should never break search */ });
+        }, 1500);
+    }
+
     function searchTerm(term) {
+        activeCategory = null;
+        var tags = categoryFilter.querySelectorAll('.category-tag');
+        tags.forEach(function(tag) {
+            tag.classList.toggle('active', tag.getAttribute('data-category') === '');
+        });
         searchInput.value = term;
-        performSearch(term);
+        updateResults();
         searchInput.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
@@ -138,5 +233,8 @@
         div.textContent = text;
         return div.innerHTML;
     }
+
+    /* Initialize category tags on page load */
+    buildCategoryTags();
 </script>
 {% endblock %}

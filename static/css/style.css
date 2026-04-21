@@ -387,6 +387,67 @@ a:hover {
 }
 
 /* ----------------------------------------------------------------
+   CATEGORY FILTER
+   ---------------------------------------------------------------- */
+.category-filter {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.4rem;
+    margin-top: 0.75rem;
+    padding: 0 0.5rem;
+}
+
+.category-tag {
+    display: inline-block;
+    background: var(--color-surface);
+    color: var(--color-text-secondary);
+    border: 1px solid var(--color-border);
+    padding: 0.25rem 0.65rem;
+    border-radius: 2rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition);
+    white-space: nowrap;
+    user-select: none;
+}
+
+.category-tag:hover {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+    background: var(--color-primary-bg);
+}
+
+.category-tag.active {
+    background: var(--color-primary);
+    color: white;
+    border-color: var(--color-primary);
+}
+
+.category-tag.active:hover {
+    background: var(--color-primary-light);
+    border-color: var(--color-primary-light);
+}
+
+.category-tag-count {
+    font-size: 0.65rem;
+    opacity: 0.7;
+    margin-left: 0.2rem;
+}
+
+.filter-status {
+    text-align: center;
+    font-size: 0.85rem;
+    color: var(--color-text-muted);
+    margin-top: 0.5rem;
+}
+
+.filter-status strong {
+    color: var(--color-primary);
+}
+
+/* ----------------------------------------------------------------
    NO RESULTS
    ---------------------------------------------------------------- */
 .no-results {
