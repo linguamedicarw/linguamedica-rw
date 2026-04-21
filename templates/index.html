@@ -25,6 +25,10 @@
 
     <!-- Category filter tags — built dynamically from term data -->
     <div class="category-filter" id="categoryFilter"></div>
+
+    <!-- A-Z alphabetical browse -->
+    <div class="az-bar" id="azBar"></div>
+
     <div class="filter-status" id="filterStatus" style="display: none;"></div>
 
     <div id="searchResults" class="results-container" style="display: none;"></div>
@@ -66,8 +70,10 @@
     const recentSection = document.getElementById('recentSection');
     const categoryFilter = document.getElementById('categoryFilter');
     const filterStatus = document.getElementById('filterStatus');
+    const azBar = document.getElementById('azBar');
 
     let activeCategory = null;
+    let activeLetter = null;
 
     /* --- Build category tags dynamically --- */
     function buildCategoryTags() {
@@ -98,6 +104,73 @@
         });
     }
 
+    /* --- Build A-Z letter bar --- */
+    function buildAZBar() {
+        var letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+
+        /* "All" button */
+        var allBtn = document.createElement('span');
+        allBtn.className = 'az-letter active';
+        allBtn.textContent = 'All';
+        allBtn.setAttribute('data-letter', '');
+        allBtn.addEventListener('click', function() { selectLetter(null); });
+        azBar.appendChild(allBtn);
+
+        /* Individual letters */
+        letters.forEach(function(letter) {
+            var btn = document.createElement('span');
+            btn.className = 'az-letter';
+            btn.textContent = letter;
+            btn.setAttribute('data-letter', letter);
+            btn.addEventListener('click', function() { selectLetter(letter); });
+            azBar.appendChild(btn);
+        });
+
+        updateAZAvailability();
+    }
+
+    /* --- Update which letters are available (have terms) --- */
+    function updateAZAvailability() {
+        var available = {};
+        allTerms.forEach(function(term) {
+            var matchesCategory = !activeCategory || (term.category || 'Uncategorized') === activeCategory;
+            if (matchesCategory) {
+                var firstLetter = term.english.charAt(0).toUpperCase();
+                available[firstLetter] = true;
+            }
+        });
+
+        var letterBtns = azBar.querySelectorAll('.az-letter');
+        letterBtns.forEach(function(btn) {
+            var letter = btn.getAttribute('data-letter');
+            if (letter === '') return; /* skip "All" */
+            if (available[letter]) {
+                btn.classList.remove('az-letter-disabled');
+            } else {
+                btn.classList.add('az-letter-disabled');
+            }
+        });
+    }
+
+    /* --- Select/deselect a letter --- */
+    function selectLetter(letter) {
+        activeLetter = letter;
+
+        var btns = azBar.querySelectorAll('.az-letter');
+        btns.forEach(function(btn) {
+            var btnLetter = btn.getAttribute('data-letter');
+            if (letter === null && btnLetter === '') {
+                btn.classList.add('active');
+            } else if (btnLetter === letter) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        });
+
+        updateResults();
+    }
+
     /* --- Select/deselect a category --- */
     function selectCategory(category) {
         activeCategory = category;
@@ -115,6 +188,9 @@
             }
         });
 
+        /* Update which letters are available for this category */
+        updateAZAvailability();
+
         /* Trigger a fresh search/filter */
         updateResults();
     }
@@ -124,9 +200,10 @@
         var query = searchInput.value.trim().toLowerCase();
         var hasQuery = query.length >= 2;
         var hasCategory = activeCategory !== null;
+        var hasLetter = activeLetter !== null;
 
         /* Nothing active — show default state */
-        if (!hasQuery && !hasCategory) {
+        if (!hasQuery && !hasCategory && !hasLetter) {
             searchResults.style.display = 'none';
             noResults.style.display = 'none';
             filterStatus.style.display = 'none';
@@ -140,11 +217,19 @@
         /* Filter terms */
         var matches = allTerms.filter(function(term) {
             var matchesCategory = !hasCategory || (term.category || 'Uncategorized') === activeCategory;
+            var matchesLetter = !hasLetter || term.english.charAt(0).toUpperCase() === activeLetter;
             var matchesQuery = !hasQuery ||
                 term.english.toLowerCase().includes(query) ||
                 term.kinyarwanda.toLowerCase().includes(query);
-            return matchesCategory && matchesQuery;
+            return matchesCategory && matchesLetter && matchesQuery;
         });
+
+        /* Sort alphabetically when browsing by letter or category (no text search) */
+        if (!hasQuery) {
+            matches.sort(function(a, b) {
+                return a.english.localeCompare(b.english);
+            });
+        }
 
         /* Log search (debounced, only for text queries) */
         if (hasQuery) {
@@ -152,10 +237,13 @@
         }
 
         /* Update filter status */
-        if (hasCategory) {
+        if (hasCategory || hasLetter) {
             filterStatus.style.display = 'block';
+            var parts = [];
+            if (hasLetter) parts.push('starting with <strong>' + escapeHtml(activeLetter) + '</strong>');
+            if (hasCategory) parts.push('in <strong>' + escapeHtml(activeCategory) + '</strong>');
             filterStatus.innerHTML = 'Showing <strong>' + matches.length + '</strong> term' +
-                (matches.length !== 1 ? 's' : '') + ' in <strong>' + escapeHtml(activeCategory) + '</strong>';
+                (matches.length !== 1 ? 's' : '') + ' ' + parts.join(' ');
         } else {
             filterStatus.style.display = 'none';
         }
@@ -218,9 +306,14 @@
 
     function searchTerm(term) {
         activeCategory = null;
+        activeLetter = null;
         var tags = categoryFilter.querySelectorAll('.category-tag');
         tags.forEach(function(tag) {
             tag.classList.toggle('active', tag.getAttribute('data-category') === '');
+        });
+        var btns = azBar.querySelectorAll('.az-letter');
+        btns.forEach(function(btn) {
+            btn.classList.toggle('active', btn.getAttribute('data-letter') === '');
         });
         searchInput.value = term;
         updateResults();
@@ -234,7 +327,8 @@
         return div.innerHTML;
     }
 
-    /* Initialize category tags on page load */
+    /* Initialize on page load */
     buildCategoryTags();
+    buildAZBar();
 </script>
 {% endblock %}
