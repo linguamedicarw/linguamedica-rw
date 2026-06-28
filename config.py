@@ -19,9 +19,23 @@ os.makedirs(os.path.join(basedir, "instance"), exist_ok=True)
 
 
 class Config:
-    # Secret key for session security (Flask uses this to sign cookies)
-    # In production, set this as an environment variable — never hardcode it
-    SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-change-in-production")
+    # Secret key for session security (Flask uses this to sign cookies).
+    # In production a real key is mandatory — a known fallback would let anyone
+    # forge an admin session. We treat "DATABASE_URL is set" as the production
+    # signal (Railway sets it) and refuse to boot without a real SECRET_KEY there.
+    SECRET_KEY = os.environ.get("SECRET_KEY")
+    if not SECRET_KEY:
+        if os.environ.get("DATABASE_URL"):
+            raise RuntimeError(
+                "SECRET_KEY is not set. Set it as an environment variable in "
+                "production — refusing to start with a default signing key."
+            )
+        SECRET_KEY = "dev-secret-change-in-production"  # local development only
+
+    # Session cookie hardening
+    SESSION_COOKIE_HTTPONLY = True                                # JS can't read the cookie
+    SESSION_COOKIE_SAMESITE = "Lax"                               # CSRF defense-in-depth
+    SESSION_COOKIE_SECURE = bool(os.environ.get("DATABASE_URL"))  # HTTPS-only in production
 
     # Database URL — this is the magic line for scalability:
     # - Locally: defaults to SQLite (a single file, zero setup)

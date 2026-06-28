@@ -17,6 +17,7 @@ Security features:
 import os
 import sqlite3
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 from flask import (
     Flask, render_template, request, redirect,
     url_for, flash, jsonify
@@ -34,11 +35,52 @@ from sqlalchemy import func
 
 
 # ---------------------------------------------------------------------------
+# Helper — validate post-login redirect targets (prevents open redirects)
+# ---------------------------------------------------------------------------
+def is_safe_redirect_target(target):
+    """Only allow redirects to local, relative paths — never off-site."""
+    if not target:
+        return False
+    parsed = urlparse(target)
+    # Must be a relative path: no scheme, no host, single leading slash
+    return (
+        not parsed.scheme
+        and not parsed.netloc
+        and target.startswith("/")
+        and not target.startswith("//")
+    )
+
+
+# ---------------------------------------------------------------------------
 # Database Migration — Add provenance columns to existing terms table
 # ---------------------------------------------------------------------------
+def _pg_add_columns_if_missing(table, columns):
+    """Idempotently add columns on Postgres via ADD COLUMN IF NOT EXISTS.
+
+    A safe no-op when the columns already exist. Wrapped in try/except so a
+    hiccup never blocks startup — the app still boots on the existing schema.
+    """
+    from sqlalchemy import text
+    try:
+        with db.engine.begin() as conn:
+            for name, ddl in columns:
+                conn.execute(text(
+                    f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {name} {ddl}"
+                ))
+    except Exception as exc:
+        print(f"[migrate] Postgres column check skipped for {table}: {exc}")
+
+
 def migrate_add_provenance_columns(app):
     """Add contributed_by, source, and date_added columns if they don't exist."""
     db_uri = app.config['SQLALCHEMY_DATABASE_URI']
+    if db_uri.startswith('postgresql'):
+        _pg_add_columns_if_missing("terms", [
+            ("contributed_by", "VARCHAR(200) DEFAULT 'Christophe Mumaragishyika'"),
+            ("source", "VARCHAR(300)"),
+            ("date_added", "TIMESTAMP"),
+        ])
+        return
     if not db_uri.startswith('sqlite'):
         return
     db_path = db_uri.replace('sqlite:///', '')
@@ -62,6 +104,12 @@ def migrate_add_provenance_columns(app):
 def migrate_add_suggestion_resolved(app):
     """Add resolved and resolved_at columns to suggestions if they don't exist."""
     db_uri = app.config['SQLALCHEMY_DATABASE_URI']
+    if db_uri.startswith('postgresql'):
+        _pg_add_columns_if_missing("suggestions", [
+            ("resolved", "BOOLEAN DEFAULT FALSE"),
+            ("resolved_at", "TIMESTAMP"),
+        ])
+        return
     if not db_uri.startswith('sqlite'):
         return
     db_path = db_uri.replace('sqlite:///', '')
@@ -82,21 +130,32 @@ def migrate_add_suggestion_resolved(app):
 
 
 # ---------------------------------------------------------------------------
+# Extensions — module-level singletons, bound to each app via init_app().
+# (Factory pattern: the app can be created more than once — e.g. in tests —
+#  without re-instantiating these, which also avoids Flask-Limiter weakref
+#  errors under repeated app creation.)
+# ---------------------------------------------------------------------------
+csrf = CSRFProtect()
+limiter = Limiter(
+    key_func=get_remote_address,
+    default_limits=[],
+    storage_uri="memory://",
+)
+
+
+# ---------------------------------------------------------------------------
 # App Factory
 # ---------------------------------------------------------------------------
-def create_app():
+def create_app(config_overrides=None):
     app = Flask(__name__)
     app.config.from_object(Config)
+    if config_overrides:
+        app.config.update(config_overrides)
 
     # Initialize extensions
     db.init_app(app)
-    csrf = CSRFProtect(app)
-    limiter = Limiter(
-        app=app,
-        key_func=get_remote_address,
-        default_limits=[],
-        storage_uri="memory://",
-    )
+    csrf.init_app(app)
+    limiter.init_app(app)
 
     # Set up Flask-Login
     login_manager = LoginManager()
@@ -128,6 +187,9 @@ def create_app():
 
     @app.errorhandler(429)
     def ratelimit_handler(e):
+        # API endpoints get a JSON 429; everything else gets the friendly page
+        if request.path.startswith("/api/"):
+            return jsonify({"error": "Too many requests. Please slow down."}), 429
         flash("Too many login attempts. Please wait a minute and try again.", "danger")
         return render_template("admin/login.html"), 429
 
@@ -145,14 +207,20 @@ def create_app():
                 db.session.add(Term(**term_data))
                 added += 1
 
+        admin_created = False
         if not Admin.query.filter_by(username=ADMIN_USERNAME).first():
             admin = Admin(username=ADMIN_USERNAME)
             admin.set_password(ADMIN_PASSWORD)
             db.session.add(admin)
+            admin_created = True
 
-        if added > 0:
+        # Commit if anything was staged — not only when new terms were added.
+        # Otherwise a freshly-created admin (e.g. after rotating ADMIN_USERNAME)
+        # would be silently rolled back and you'd be locked out.
+        if added > 0 or admin_created:
             db.session.commit()
-            print(f"Auto-seed: added {added} new terms (total: {Term.query.count()})")
+            if added > 0:
+                print(f"Auto-seed: added {added} new terms (total: {Term.query.count()})")
 
     # -------------------------------------------------------------------
     # PUBLIC ROUTES
@@ -197,6 +265,7 @@ def create_app():
 
     @app.route("/api/search")
     @csrf.exempt
+    @limiter.limit("30 per minute")
     def api_search_route():
         query = request.args.get("q", "").strip().lower()
         if not query:
@@ -219,6 +288,7 @@ def create_app():
 
     @app.route("/api/log-search", methods=["POST"])
     @csrf.exempt
+    @limiter.limit("30 per minute")
     def api_log_search():
         """
         Called by the public search page JS (debounced).
@@ -227,7 +297,9 @@ def create_app():
         data = request.get_json(silent=True) or {}
         query = (data.get("query") or "").strip().lower()
         results_count = data.get("results_count", 0)
-        if not query or len(query) < 2:
+        # Match the frontend's 4-char floor so the noise filter holds even if
+        # something calls this endpoint directly.
+        if not query or len(query) < 4:
             return jsonify({"ok": True})
         log = SearchLog(
             query_text=query,
@@ -257,6 +329,8 @@ def create_app():
                 login_user(admin)
                 flash("Welcome back!", "success")
                 next_page = request.args.get("next")
+                if not is_safe_redirect_target(next_page):
+                    next_page = None
                 return redirect(next_page or url_for("admin_dashboard"))
             else:
                 flash("Invalid username or password.", "danger")
@@ -327,6 +401,7 @@ def create_app():
                 example_rw=request.form.get("example_rw", "").strip() or None,
                 etymology=request.form.get("etymology", "").strip() or None,
                 category=request.form.get("category", "").strip() or None,
+                source=request.form.get("source", "").strip() or None,
             )
             db.session.add(term)
             db.session.commit()
@@ -345,6 +420,7 @@ def create_app():
             term.example_rw = request.form.get("example_rw", "").strip() or None
             term.etymology = request.form.get("etymology", "").strip() or None
             term.category = request.form.get("category", "").strip() or None
+            term.source = request.form.get("source", "").strip() or None
             db.session.commit()
             flash(f'"{term.english}" has been updated.', "success")
             return redirect(url_for("admin_dashboard"))
