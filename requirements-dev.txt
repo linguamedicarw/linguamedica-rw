@@ -1,0 +1,2 @@
+# Test dependencies (not needed in production)
+pytest>=8.0

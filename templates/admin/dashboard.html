@@ -145,7 +145,7 @@
                 <!-- Resolve: the ONLY way to move a suggestion out of this panel -->
                 <form method="POST" action="{{ url_for('admin_resolve_suggestion', suggestion_id=s.id) }}" style="display:inline;">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button type="submit" class="btn btn-small btn-resolve" onclick="return confirm('Mark &quot;{{ s.english_word }}&quot; as resolved? It will move to the archive.');">
+                    <button type="submit" class="btn btn-small btn-resolve" onclick="return confirm('Mark this suggestion as resolved? It will move to the archive.');">
                         ✓ Resolved
                     </button>
                 </form>
@@ -240,7 +240,7 @@
                 <td style="font-size: 0.85rem; color: #666;">{{ term.source or '—' }}</td>
                 <td class="action-cell">
                     <a href="{{ url_for('admin_edit_term', term_id=term.id) }}" class="btn btn-small btn-outline">Edit</a>
-                    <form method="POST" action="{{ url_for('admin_delete_term', term_id=term.id) }}" style="display:inline;" onsubmit="return confirm('Delete {{ term.english }}?');">
+                    <form method="POST" action="{{ url_for('admin_delete_term', term_id=term.id) }}" style="display:inline;" onsubmit="return confirm('Delete this term? This cannot be undone.');">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <button type="submit" class="btn btn-small btn-danger">Delete</button>
                     </form>

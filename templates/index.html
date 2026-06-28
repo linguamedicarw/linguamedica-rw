@@ -154,6 +154,8 @@
 
     /* --- Select/deselect a letter --- */
     function selectLetter(letter) {
+        /* Browsing clears any search text — the two modes don't stack */
+        if (searchInput.value) searchInput.value = '';
         activeLetter = letter;
 
         var btns = azBar.querySelectorAll('.az-letter');
@@ -173,6 +175,8 @@
 
     /* --- Select/deselect a category --- */
     function selectCategory(category) {
+        /* Browsing clears any search text — the two modes don't stack */
+        if (searchInput.value) searchInput.value = '';
         activeCategory = category;
 
         /* Update active tag styling */
@@ -287,6 +291,12 @@
     }
 
     searchInput.addEventListener('input', function() {
+        /* Search and browse are mutually exclusive: typing a query clears any
+           active category/letter so search runs across the whole dictionary. */
+        if (searchInput.value.trim().length > 0 &&
+            (activeCategory !== null || activeLetter !== null)) {
+            resetBrowseFilters();
+        }
         updateResults();
     });
 
@@ -304,7 +314,8 @@
         }, 1500);
     }
 
-    function searchTerm(term) {
+    /* --- Reset category + letter back to "All" (used when a text search begins) --- */
+    function resetBrowseFilters() {
         activeCategory = null;
         activeLetter = null;
         var tags = categoryFilter.querySelectorAll('.category-tag');
@@ -315,6 +326,11 @@
         btns.forEach(function(btn) {
             btn.classList.toggle('active', btn.getAttribute('data-letter') === '');
         });
+        updateAZAvailability();
+    }
+
+    function searchTerm(term) {
+        resetBrowseFilters();
         searchInput.value = term;
         updateResults();
         searchInput.scrollIntoView({ behavior: 'smooth', block: 'start' });

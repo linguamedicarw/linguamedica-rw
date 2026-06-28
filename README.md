@@ -7,12 +7,14 @@ A curated medical translation dictionary for English ↔ Kinyarwanda, built to s
 ## Features
 
 - **Instant search** — Find medical terms as you type (English or Kinyarwanda)
+- **Category & A–Z browsing** — Filter by medical category or jump alphabetically
 - **Curated translations** — Every entry is validated by a domain expert
 - **Example sentences** — See terms used in real medical contexts (both languages)
 - **Etymological explanations** — Understand *why* each translation works linguistically
 - **Provenance tracking** — Every term records who contributed it and where it came from
 - **Suggestion system** — Users can submit terms they need translated
-- **Admin dashboard** — Manage the dictionary, review suggestions
+- **Admin dashboard** — Manage the dictionary, review suggestions, and view search analytics
+- **Search analytics** — Logs searches and surfaces "terms people can't find" to prioritize new entries
 - **JSON API** — Ready for mobile apps and integrations
 
 ## Quick Start
@@ -61,8 +63,8 @@ See `.env.example` for a template.
 linguamedica-rw/
 ├── app.py              ← Main Flask application (routes, auth, security)
 ├── config.py           ← Configuration (database URL, secrets)
-├── models.py           ← Database models (Term, Suggestion, Admin)
-├── seed_data.py        ← 53 curated medical terms + admin setup
+├── models.py           ← Database models (Term, Suggestion, SearchLog, Admin)
+├── seed_data.py        ← 100 curated medical terms + admin setup
 ├── requirements.txt    ← Python dependencies
 ├── Procfile            ← Production server config (Railway)
 ├── .env.example        ← Environment variable template
@@ -83,7 +85,8 @@ linguamedica-rw/
 - Passwords hashed with Werkzeug (never stored in plaintext)
 - All credentials loaded from environment variables
 - CSRF protection on all forms (Flask-WTF)
-- Rate limiting on login route — 5 attempts per minute (Flask-Limiter)
+- Rate limiting on login (5/min) and public API endpoints (30/min) via Flask-Limiter
+- Post-login redirects validated to prevent open-redirect attacks
 - Content-Security-Policy and X-Frame-Options headers
 - SQLAlchemy ORM prevents SQL injection
 - XSS protection via HTML escaping on all user content
@@ -94,8 +97,11 @@ This app is deployment-ready for Railway or Render:
 
 1. Push to GitHub
 2. Connect your repo to [Railway](https://railway.app)
-3. Set environment variables: `SECRET_KEY`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`
-4. Deploy
+3. Add a PostgreSQL database to the project (Railway → New → Database → PostgreSQL)
+4. Set environment variables: `SECRET_KEY`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`, and `DATABASE_URL` (reference the Postgres service's connection URL)
+5. Deploy
+
+> **Important:** Without `DATABASE_URL`, the app falls back to SQLite, which is wiped on every redeploy on Railway. A managed Postgres database is required for production data to persist.
 
 ## Tech Stack
 
