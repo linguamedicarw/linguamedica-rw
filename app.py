@@ -253,6 +253,10 @@ def create_app(config_overrides=None):
             return redirect(url_for("index"))
         return render_template("suggest.html")
 
+    @app.route("/about")
+    def about():
+        return render_template("about.html")
+
     # -------------------------------------------------------------------
     # API ROUTES (CSRF-exempt — no cookie auth)
     # -------------------------------------------------------------------

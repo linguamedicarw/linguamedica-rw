@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block title %}About{% endblock %}
+
+{% block content %}
+<article class="about-page">
+
+  <h1>About LinguaMedica RW</h1>
+
+  <section>
+    <h2>What this is</h2>
+    <p>LinguaMedica RW is a curated dictionary of medical terminology in English and Kinyarwanda. Every term here has been checked by a native Kinyarwanda speaker before it was published, which is the line between this and an automatic translation. The aim is easy to say and hard to do well: make medical language in Kinyarwanda accurate, consistent, and safe to rely on, for the clinicians, students, translators, and researchers who need it.</p>
+  </section>
+
+  <section>
+    <h2>Why it exists</h2>
+    <p>The language tools most people reach for today, including the translation systems built on large AI models, learned from enormous amounts of written text. Almost all of that text is in a small number of widely written languages. Kinyarwanda is barely present in it.</p>
+    <p>That gap matters more than it first appears. When a model has seen a language only rarely, it does not stop and admit it is unsure. It produces an answer anyway, and it does so with confidence. In everyday conversation an awkward word is a minor thing. In medicine it can be a serious one, because a wrong term can change what a patient understands about their own care.</p>
+    <p>LinguaMedica works from the opposite direction. Reliable translation in a language the models hardly know should not depend on a machine inventing a medical term in the moment. It should rest on terminology a native speaker has already verified. This dictionary is that verified ground: the terminology a translation system can stand on instead of guessing.</p>
+  </section>
+
+  <section>
+    <h2>How a term gets verified</h2>
+    <p>I am the native Kinyarwanda speaker behind this dictionary, and I verify every entry myself. But verification here is built so that my judgment is never the final word unchallenged. I review each term as a native speaker, and I work alongside subject-matter experts in Kinyarwanda and medical education to check those judgments against more than my own knowledge. A single expert can carry blind spots they cannot see. Review by another qualified native speaker is what turns a personal judgment into a verified one, and it is the standard this dictionary is being built to meet.</p>
+    <p>Verifying a medical term is rarely a matter of finding one word that lines up with another. Many medical ideas have no ready equivalent in Kinyarwanda, and deciding how to express one is a judgment, not a lookup. Across this work I have come to rely on six strategies, and which one I use depends on the term in front of me.</p>
+
+    <div class="strategy">
+      <h3>Descriptive translation</h3>
+      <p>When no single word exists, I describe the concept directly in clear Kinyarwanda so the meaning is unmistakable. For "anemia" I use <span class="rw-term">Kubura amaraso</span>, literally "lacking blood," which tells a patient what the condition is the moment they hear it.</p>
+    </div>
+
+    <div class="strategy">
+      <h3>Neologism or compound</h3>
+      <p>I build a new term by combining existing Kinyarwanda elements into one that fits the concept. For the research term "cross-sectional study" I coined <span class="rw-term">Inyigo mfatashushorusange ngambiriragihe</span>, built from the elements for capturing a general picture at a single point in time.</p>
+    </div>
+
+    <div class="strategy">
+      <h3>Existing term</h3>
+      <p>Where Kinyarwanda already has a word in genuine use for the idea, I use it rather than invent one. "Doctor" is simply <span class="rw-term">Umuganga</span>, the term used everywhere in Rwandan clinical life, and inventing an alternative would only get in the way.</p>
+    </div>
+
+    <div class="strategy">
+      <h3>Context synonym</h3>
+      <p>When a term could be rendered more than one way, I choose based on the context it appears in. "Compensation" can be <span class="rw-term">impozamarira</span>, <span class="rw-term">inshumbuho</span>, or <span class="rw-term">igihembo</span> depending on whether the meaning is financial, restitution, or a reward, and the surrounding text decides which is right.</p>
+    </div>
+
+    <div class="strategy">
+      <h3>Borrowing with a gloss</h3>
+      <p>Where a borrowed term is the one people actually recognize, I keep it and pair it with a Kinyarwanda explanation. "Ministry of Health" becomes <span class="rw-term">Minisiteri y'ubuzima</span>, keeping the borrowed <em>Minisiteri</em> alongside <em>y'ubuzima</em>, "of health," so the phrase stays both familiar and clear.</p>
+    </div>
+
+    <div class="strategy">
+      <h3>Functional translation</h3>
+      <p>When describing what something does communicates more clearly than a literal equivalent, I translate by its function. A "closed-ended question" becomes <span class="rw-term">Ikibazo ntangamahitamo y'ibisubizo</span>, literally "a question that gives choices of answers," which is exactly what such a question does.</p>
+    </div>
+
+    <p>Each entry also records where it came from: who contributed it, and the source or context behind the translation. That provenance is part of what makes the dictionary trustworthy and citable, and it reflects the open license the terminology is shared under.</p>
+  </section>
+
+  <section>
+    <h2>Where this is going</h2>
+    <p>The dictionary you are using is the foundation for a larger research effort. The verified terminology here is the constraint layer for a grounded translation system, software that translates medical content into Kinyarwanda by drawing on this verified terminology rather than generating words on its own. In technical terms, a grounded RAG system.</p>
+    <p>It helps to be clear about what is live today and what is still being built. What you can use right now is the verified dictionary, a careful and growing terminology resource you can search and add to. The grounded translation system is the research being developed on top of it. Keeping the two apart is deliberate. The whole project only has value if the terminology is genuinely verified, so the dictionary has to stand on its own first, and the system is built so it never strays from it.</p>
+  </section>
+
+  <section>
+    <h2>About the author</h2>
+    <p>LinguaMedica RW is created and maintained by Christophe Mumaragishyika, a native Kinyarwanda speaker and data scientist specializing in natural language processing, with over five years of experience in Rwanda's health sector, including time on the staff of the University of Global Health Equity and work on research projects at Butaro Hospital.</p>
+  </section>
+
+  <section>
+    <h2>Contributing</h2>
+    <p>This is ongoing work, and it grows through use. If you search for a term and cannot find it, you can suggest it through the <a href="{{ url_for('suggest') }}">Suggest a Word</a> page, and it goes into the queue for verification. Every suggestion is reviewed before it enters the dictionary.</p>
+    <p>For collaboration, corrections, or questions, you can reach me at <a href="mailto:contact@linguamedica.rw">contact@linguamedica.rw</a>.</p>
+  </section>
+
+</article>
+{% endblock %}

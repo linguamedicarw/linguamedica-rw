@@ -1065,3 +1065,93 @@ textarea.form-input {
         font-size: 0.7rem;
     }
 }
+
+/* ----------------------------------------------------------------
+   ABOUT PAGE  (scoped entirely under .about-page — affects no other page)
+   ---------------------------------------------------------------- */
+.about-page {
+    max-width: 44rem;
+    margin: 0 auto;
+    padding: 2.5rem 0 1rem;
+}
+
+.about-page h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--color-primary);
+    margin-bottom: 2rem;
+    line-height: 1.2;
+}
+
+.about-page section {
+    margin-bottom: 2.5rem;
+}
+
+.about-page h2 {
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: var(--color-text);
+    margin-bottom: 1rem;
+    padding-bottom: 0.4rem;
+    border-bottom: 2px solid var(--color-primary-bg);
+}
+
+.about-page p {
+    color: var(--color-text-secondary);
+    margin-bottom: 1rem;
+    line-height: 1.7;
+}
+
+.about-page section > p:last-child {
+    margin-bottom: 0;
+}
+
+.about-page a {
+    color: var(--color-primary);
+    font-weight: 500;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+/* The six translation strategies */
+.about-page .strategy {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-left: 4px solid var(--color-primary);
+    border-radius: var(--radius);
+    padding: 1rem 1.25rem;
+    margin-bottom: 1rem;
+    box-shadow: var(--shadow-sm);
+}
+
+.about-page .strategy h3 {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--color-primary);
+    margin-bottom: 0.4rem;
+}
+
+.about-page .strategy p {
+    margin-bottom: 0;
+    font-size: 0.95rem;
+}
+
+/* Kinyarwanda terms set inline within the prose */
+.about-page .rw-term {
+    color: var(--color-primary);
+    font-weight: 600;
+}
+
+@media (max-width: 640px) {
+    .about-page {
+        padding-top: 1.5rem;
+    }
+
+    .about-page h1 {
+        font-size: 1.5rem;
+    }
+
+    .about-page h2 {
+        font-size: 1.2rem;
+    }
+}
