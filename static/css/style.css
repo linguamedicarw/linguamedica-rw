@@ -1155,3 +1155,56 @@ textarea.form-input {
         font-size: 1.2rem;
     }
 }
+
+/* ----------------------------------------------------------------
+   "WHY THIS PROJECT?"  —  nav pill + homepage invite
+   ---------------------------------------------------------------- */
+
+/* Nav bar pill — sets it apart from the plain links */
+.nav-links a.nav-why {
+    color: #fff;
+    font-weight: 600;
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    padding: 0.3rem 0.85rem;
+    border-radius: 2rem;
+    transition: background var(--transition), border-color var(--transition);
+}
+
+.nav-links a.nav-why:hover {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.22);
+    border-color: rgba(255, 255, 255, 0.7);
+    text-decoration: none;
+}
+
+/* Homepage invite for first-time visitors */
+.home-why {
+    display: block;
+    width: fit-content;
+    margin: 0 auto 2rem;
+    padding: 0.6rem 1.25rem;
+    background: var(--color-primary-bg);
+    color: var(--color-primary);
+    border: 1px solid rgba(139, 26, 26, 0.15);
+    border-radius: 2rem;
+    font-size: 0.95rem;
+    font-weight: 600;
+    text-align: center;
+    transition: background var(--transition), transform var(--transition);
+}
+
+.home-why:hover {
+    background: #FBE8E8;
+    text-decoration: none;
+    transform: translateY(-1px);
+}
+
+.home-why-arrow {
+    display: inline-block;
+    transition: transform var(--transition);
+}
+
+.home-why:hover .home-why-arrow {
+    transform: translateX(3px);
+}

@@ -18,9 +18,9 @@
                 <span class="brand-text">LinguaMedica <span class="brand-rw">RW</span></span>
             </a>
             <div class="nav-links">
+                <a href="{{ url_for('about') }}" class="nav-why">Why This Project?</a>
                 <a href="{{ url_for('index') }}">Search</a>
                 <a href="{{ url_for('suggest') }}">Suggest a Word</a>
-                <a href="{{ url_for('about') }}">About</a>
                 {% if current_user.is_authenticated %}
                     <a href="{{ url_for('admin_dashboard') }}" class="nav-admin">Dashboard</a>
                     <a href="{{ url_for('admin_logout') }}" class="nav-logout">Log out</a>
