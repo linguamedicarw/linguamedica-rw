@@ -30,7 +30,7 @@ from flask_wtf.csrf import CSRFProtect
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from config import Config
-from models import db, Term, Suggestion, SearchLog, Admin
+from models import db, Term, TermReview, Suggestion, SearchLog, Admin
 from sqlalchemy import func
 
 
@@ -129,6 +129,93 @@ def migrate_add_suggestion_resolved(app):
     conn.close()
 
 
+def migrate_add_validation_status(app):
+    """Add the computed validation_status column to terms if it doesn't exist.
+
+    Existing rows are backfilled with 'unreviewed', which is exactly true:
+    no review rows exist yet. Idempotent and safe to run on every startup.
+    """
+    db_uri = app.config['SQLALCHEMY_DATABASE_URI']
+    if db_uri.startswith('postgresql'):
+        _pg_add_columns_if_missing("terms", [
+            ("validation_status",
+             "VARCHAR(20) NOT NULL DEFAULT 'unreviewed'"),
+        ])
+        return
+    if not db_uri.startswith('sqlite'):
+        return
+    db_path = db_uri.replace('sqlite:///', '')
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA table_info(terms)")
+    existing = {row[1] for row in cursor.fetchall()}
+    if 'validation_status' not in existing:
+        cursor.execute(
+            "ALTER TABLE terms ADD COLUMN validation_status VARCHAR(20) "
+            "NOT NULL DEFAULT 'unreviewed'"
+        )
+    conn.commit()
+    conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Validation status — computed from term_reviews, never set by hand
+# ---------------------------------------------------------------------------
+# Stable reviewer ids mapped to the contributor names used in
+# terms.contributed_by. This mapping is what lets the recompute exclude
+# a reviewer's judgment of a term they themselves contributed. Add a new
+# reviewer's entry here BEFORE they start reviewing, or author-exclusion
+# cannot see them.
+REVIEWER_NAMES = {
+    "CM": "Christophe Mumaragishyika",
+    "OU": "Olive Umuhoza",
+}
+
+
+def recompute_validation_status(term):
+    """Recompute term.validation_status from its blind review rows.
+
+    Rules (validation methodology v2):
+    - Only blind scores count. Adjudication rows are excluded.
+    - A reviewer's judgment of a term they contributed is excluded.
+    - Only each reviewer's latest blind score counts, so a re-review
+      replaces the earlier one rather than stacking.
+    - Status:
+        0 qualifying reviews -> unreviewed
+        1                    -> single
+        2 or more            -> dual_agreed when at least two reviewers
+                                score 4 and none scores below 3 (this is
+                                identical to unanimity at exactly two
+                                reviewers), otherwise dual_conflict
+
+    The caller is responsible for db.session.commit().
+    """
+    rows = (
+        TermReview.query
+        .filter_by(term_id=term.id, is_adjudication=False)
+        .order_by(TermReview.reviewed_at.asc(), TermReview.id.asc())
+        .all()
+    )
+    latest = {}
+    for r in rows:
+        author_name = REVIEWER_NAMES.get(r.reviewer)
+        if author_name and term.contributed_by and author_name == term.contributed_by:
+            continue  # authors cannot validate their own terms
+        latest[r.reviewer] = r.score  # later rows overwrite: latest wins
+
+    scores = list(latest.values())
+    if not scores:
+        status = "unreviewed"
+    elif len(scores) == 1:
+        status = "single"
+    else:
+        fours = sum(1 for s in scores if s == 4)
+        status = "dual_agreed" if (fours >= 2 and min(scores) >= 3) else "dual_conflict"
+
+    term.validation_status = status
+    return status
+
+
 # ---------------------------------------------------------------------------
 # Extensions — module-level singletons, bound to each app via init_app().
 # (Factory pattern: the app can be created more than once — e.g. in tests —
@@ -198,6 +285,7 @@ def create_app(config_overrides=None):
         db.create_all()
         migrate_add_provenance_columns(app)
         migrate_add_suggestion_resolved(app)
+        migrate_add_validation_status(app)
 
         from seed_data import STARTER_TERMS, ADMIN_USERNAME, ADMIN_PASSWORD
 

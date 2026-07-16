@@ -49,6 +49,14 @@ class Term(db.Model):
     date_added = db.Column(db.DateTime, nullable=True,
                            default=lambda: datetime.now(timezone.utc))
 
+    # --- Validation status (computed, never set by hand) ---
+    # Recomputed from term_reviews rows by recompute_validation_status()
+    # in app.py, per the validation methodology (v2).
+    # Values: unreviewed, single, dual_agreed, dual_conflict.
+    validation_status = db.Column(db.String(20), nullable=False,
+                                  default="unreviewed",
+                                  server_default="unreviewed")
+
     created_at = db.Column(
         db.DateTime,
         default=lambda: datetime.now(timezone.utc)
@@ -68,10 +76,64 @@ class Term(db.Model):
             "source": self.source,
             "date_added": self.date_added.isoformat() if self.date_added else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+            "validation_status": self.validation_status,
         }
 
     def __repr__(self):
         return f"<Term: {self.english} → {self.kinyarwanda}>"
+
+
+class TermReview(db.Model):
+    """
+    A single reviewer's judgment on a single term.
+
+    This is the evidence layer for the validation methodology:
+    each row is one blind adequacy score (1 to 4) by one reviewer,
+    or a flagged adjudication record settling a disagreement.
+
+    Rules carried over from the validation methodology (v2):
+    - Blind scores (is_adjudication=False) are the only rows that
+      feed agreement statistics and validation_status.
+    - Adjudication rows (is_adjudication=True) record how a
+      disagreement was settled. They fix the published term but
+      are excluded from reliability statistics by construction.
+    - score is hard-limited to 1..4 by a database CHECK constraint,
+      so an out-of-range value can never poison the statistics.
+    """
+    __tablename__ = "term_reviews"
+
+    id = db.Column(db.Integer, primary_key=True)
+    term_id = db.Column(
+        db.Integer,
+        db.ForeignKey("terms.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    reviewer = db.Column(db.String(10), nullable=False, index=True)   # 'CM', 'OU', ...
+    score = db.Column(db.Integer, nullable=False)                     # 1..4 adequacy
+    proposed_rw = db.Column(db.String(200), nullable=True)            # reviewer's alternative
+    note = db.Column(db.Text, nullable=True)
+    is_adjudication = db.Column(db.Boolean, nullable=False, default=False,
+                                server_default=db.text("false"))
+    reviewed_at = db.Column(
+        db.DateTime,
+        default=lambda: datetime.now(timezone.utc)
+    )
+
+    __table_args__ = (
+        db.CheckConstraint("score >= 1 AND score <= 4",
+                           name="ck_term_reviews_score_range"),
+    )
+
+    term = db.relationship(
+        "Term",
+        backref=db.backref("reviews", lazy="dynamic",
+                           cascade="all, delete-orphan"),
+    )
+
+    def __repr__(self):
+        kind = "adjudication" if self.is_adjudication else "blind"
+        return f"<TermReview: term={self.term_id} {self.reviewer}={self.score} ({kind})>"
 
 
 class Suggestion(db.Model):
