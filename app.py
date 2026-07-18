@@ -129,6 +129,40 @@ def migrate_add_suggestion_resolved(app):
     conn.close()
 
 
+# Known contributor corrections. Three early community-suggested terms were
+# seeded with the default author in `contributed_by`; the true contributor was
+# only recorded in each row's `source`. This restores correct attribution.
+# Guarded so a later deliberate edit is never overwritten (see function below).
+DEFAULT_CONTRIBUTOR = "Christophe Mumaragishyika"
+CONTRIBUTOR_CORRECTIONS = {
+    "Palliative care": "Aimable Uwimana (Mugenzi)",
+    "Interview (research methodology)": "Benithe Himbazwa",
+    "Health management": "Benithe Himbazwa",
+}
+
+
+def migrate_fix_contributor_attribution(app):
+    """Restore correct contributor attribution on the community-suggested terms.
+
+    Idempotent and safe on every startup. Only rows still holding the default
+    author (or NULL) are corrected, so any later deliberate change to a term's
+    contributor is preserved rather than forced back on the next boot.
+    """
+    try:
+        changed = 0
+        for english, author in CONTRIBUTOR_CORRECTIONS.items():
+            term = Term.query.filter_by(english=english).first()
+            if term and term.contributed_by in (DEFAULT_CONTRIBUTOR, None):
+                term.contributed_by = author
+                changed += 1
+        if changed:
+            db.session.commit()
+            print(f"[migrate] corrected contributor attribution on {changed} term(s)")
+    except Exception as exc:
+        db.session.rollback()
+        print(f"[migrate] contributor attribution correction skipped: {exc}")
+
+
 def migrate_add_validation_status(app):
     """Add the computed validation_status column to terms if it doesn't exist.
 
@@ -169,6 +203,7 @@ def migrate_add_validation_status(app):
 REVIEWER_NAMES = {
     "CM": "Christophe Mumaragishyika",
     "OU": "Olive Umuhoza",
+    "YV": "Yvette Nkurunziza",
 }
 
 
@@ -286,6 +321,7 @@ def create_app(config_overrides=None):
         migrate_add_provenance_columns(app)
         migrate_add_suggestion_resolved(app)
         migrate_add_validation_status(app)
+        migrate_fix_contributor_attribution(app)
 
         from seed_data import STARTER_TERMS, ADMIN_USERNAME, ADMIN_PASSWORD
 
