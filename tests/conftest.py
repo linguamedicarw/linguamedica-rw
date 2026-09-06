@@ -22,8 +22,16 @@ ADMIN_PASSWORD = os.environ["ADMIN_PASSWORD"]
 
 
 @pytest.fixture
-def app():
+def app(monkeypatch):
     """A fresh app with an isolated SQLite database, torn down after each test."""
+    # create_app() seeds reviewer accounts from REVIEWER_ACCOUNTS at boot.
+    # A developer running the local server exports that variable, and if it
+    # leaks into the test process the fixture in tests/test_review.py that
+    # creates the OU reviewer collides with the seeded row
+    # (UNIQUE constraint failed: reviewers.code). Tests build the reviewers
+    # they need themselves, so the test app must boot without it.
+    monkeypatch.delenv("REVIEWER_ACCOUNTS", raising=False)
+
     db_fd, db_path = tempfile.mkstemp(suffix=".db")
     application = create_app({
         "TESTING": True,
