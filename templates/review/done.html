@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+
+{% block title %}Review complete{% endblock %}
+
+{% block content %}
+<section class="form-section form-section-narrow">
+    <h1>Nothing left to score</h1>
+    <p>Thank you, {{ reviewer.display_name }}. You have scored every term currently in your queue ({{ total }} in total).</p>
+    <p class="label-hint">If new terms are added to the round, they will appear here the next time you log in. You can revisit a term you have already scored from the link you were sent, but a replacement score needs an explicit confirmation.</p>
+    <div class="form-actions">
+        <a href="{{ url_for('review_guideline') }}" class="btn btn-outline">Read the guideline</a>
+        <a href="{{ url_for('review_logout') }}" class="btn btn-outline">Log out</a>
+    </div>
+</section>
+{% endblock %}

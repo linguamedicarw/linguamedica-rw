@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block title %}Reviewer guideline{% endblock %}
+
+{% block content %}
+<section class="form-section">
+    <h1>Reviewer guideline</h1>
+    <p><a href="{{ url_for('review_queue') }}" class="btn btn-small btn-outline">Back to scoring</a></p>
+    {% if html %}
+        <div class="guideline-body">{{ html|safe }}</div>
+    {% elif text %}
+        <pre class="guideline-body" style="white-space: pre-wrap; font-family: inherit;">{{ text }}</pre>
+    {% else %}
+        <p class="label-hint">The guideline file is not available on this server yet. Please use the copy you were sent by email.</p>
+    {% endif %}
+</section>
+{% endblock %}

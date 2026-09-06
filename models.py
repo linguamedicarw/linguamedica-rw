@@ -112,6 +112,10 @@ class TermReview(db.Model):
     reviewer = db.Column(db.String(10), nullable=False, index=True)   # 'CM', 'OU', ...
     score = db.Column(db.Integer, nullable=False)                     # 1..4 adequacy
     proposed_rw = db.Column(db.String(200), nullable=True)            # reviewer's alternative
+    # The exact Kinyarwanda string that was on the reviewer's screen when
+    # they scored. Recorded so the stimulus is auditable, and so a genuinely
+    # blind round can be run later without reworking the schema.
+    shown_rw = db.Column(db.String(200), nullable=True)
     note = db.Column(db.Text, nullable=True)
     is_adjudication = db.Column(db.Boolean, nullable=False, default=False,
                                 server_default=db.text("false"))
@@ -209,5 +213,56 @@ class Admin(UserMixin, db.Model):
         """Verify a password against the stored hash."""
         return check_password_hash(self.password_hash, password)
 
+    def get_id(self):
+        # Prefixed so Flask-Login can tell an admin session from a reviewer
+        # session. The user loader in app.py understands both, and still
+        # accepts the old bare-integer form for sessions created before this.
+        return f"admin:{self.id}"
+
     def __repr__(self):
         return f"<Admin: {self.username}>"
+
+
+class Reviewer(UserMixin, db.Model):
+    """
+    An independent reviewer account for the validation round.
+
+    Separate from Admin on purpose: a reviewer can reach the scoring pages
+    and nothing else. No dashboard, no add-term, no delete. Identity comes
+    from the session, so a score is attributed to whoever is logged in,
+    never to a name picked from a dropdown.
+
+    `code` is the stable reviewer id used in term_reviews.reviewer and in
+    REVIEWER_NAMES (app.py): 'CM', 'OU', 'YV'. Author exclusion depends on
+    that mapping, so a reviewer must have an entry there before scoring.
+    """
+    __tablename__ = "reviewers"
+
+    id = db.Column(db.Integer, primary_key=True)
+    code = db.Column(db.String(10), unique=True, nullable=False, index=True)
+    display_name = db.Column(db.String(200), nullable=False)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password_hash = db.Column(db.String(256), nullable=False)
+    active = db.Column(db.Boolean, nullable=False, default=True,
+                       server_default=db.text("true"))
+    created_at = db.Column(
+        db.DateTime,
+        default=lambda: datetime.now(timezone.utc)
+    )
+
+    @property
+    def is_active(self):
+        # Flask-Login consults this; a deactivated reviewer cannot log in.
+        return bool(self.active)
+
+    def get_id(self):
+        return f"reviewer:{self.id}"
+
+    def set_password(self, password):
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
+
+    def __repr__(self):
+        return f"<Reviewer: {self.code} {self.display_name}>"

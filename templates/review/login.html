@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}Reviewer Login{% endblock %}
+
+{% block content %}
+<section class="form-section form-section-narrow">
+    <h1>Reviewer Login</h1>
+    <p class="label-hint">For the LinguaMedica RW validation round. If you are the site administrator, use the <a href="{{ url_for('admin_login') }}">admin login</a> instead.</p>
+    <form method="POST" class="login-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="form-group">
+            <label for="username">Username</label>
+            <input type="text" id="username" name="username" required class="form-input" autofocus autocomplete="username">
+        </div>
+        <div class="form-group">
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" required class="form-input" autocomplete="current-password">
+        </div>
+        <button type="submit" class="btn btn-primary btn-full">Log In</button>
+    </form>
+</section>
+{% endblock %}

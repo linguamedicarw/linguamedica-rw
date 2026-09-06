@@ -15,12 +15,14 @@ Security features:
 """
 
 import os
+import hashlib
 import sqlite3
 from datetime import datetime, timezone
+from functools import wraps
 from urllib.parse import urlparse
 from flask import (
     Flask, render_template, request, redirect,
-    url_for, flash, jsonify
+    url_for, flash, jsonify, abort, session
 )
 from flask_login import (
     LoginManager, login_user, logout_user,
@@ -30,7 +32,7 @@ from flask_wtf.csrf import CSRFProtect
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from config import Config
-from models import db, Term, TermReview, Suggestion, SearchLog, Admin
+from models import db, Term, TermReview, Suggestion, SearchLog, Admin, Reviewer
 from sqlalchemy import func
 
 
@@ -192,6 +194,32 @@ def migrate_add_validation_status(app):
     conn.close()
 
 
+def migrate_add_shown_rw(app):
+    """Add term_reviews.shown_rw if it doesn't exist.
+
+    Records the exact Kinyarwanda string a reviewer saw when scoring, so the
+    stimulus is auditable and a genuinely blind round remains possible later.
+    Idempotent and safe on every startup.
+    """
+    db_uri = app.config['SQLALCHEMY_DATABASE_URI']
+    if db_uri.startswith('postgresql'):
+        _pg_add_columns_if_missing("term_reviews", [
+            ("shown_rw", "VARCHAR(200)"),
+        ])
+        return
+    if not db_uri.startswith('sqlite'):
+        return
+    db_path = db_uri.replace('sqlite:///', '')
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA table_info(term_reviews)")
+    existing = {row[1] for row in cursor.fetchall()}
+    if 'shown_rw' not in existing:
+        cursor.execute("ALTER TABLE term_reviews ADD COLUMN shown_rw VARCHAR(200)")
+    conn.commit()
+    conn.close()
+
+
 # ---------------------------------------------------------------------------
 # Validation status — computed from term_reviews, never set by hand
 # ---------------------------------------------------------------------------
@@ -251,6 +279,89 @@ def recompute_validation_status(term):
     return status
 
 
+# Terms used as worked anchor examples in REVIEWER_GUIDELINE.md. A reviewer
+# who has seen a term scored in the guideline would score it the same way
+# in the queue, so these never appear in the scoring queue.
+REVIEW_EXCLUDED_TERMS = {
+    "Anemia",
+    "Malaria",
+    "Tuberculosis",
+    "Bone tuberculosis",
+    "Uterine prolapse",
+    "Stomach ache",
+}
+
+
+# ---------------------------------------------------------------------------
+# Access control — admin and reviewer are different kinds of session
+# ---------------------------------------------------------------------------
+def _actual_user():
+    return current_user._get_current_object() if current_user.is_authenticated else None
+
+
+def admin_required(view):
+    """Only an Admin session may pass. Reviewers get 403, guests get login."""
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        user = _actual_user()
+        if user is None:
+            return redirect(url_for("admin_login", next=request.path))
+        if not isinstance(user, Admin):
+            abort(403)
+        return view(*args, **kwargs)
+    return wrapped
+
+
+def reviewer_required(view):
+    """Only a Reviewer session may pass. Admins get 403, guests get login."""
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        user = _actual_user()
+        if user is None:
+            return redirect(url_for("review_login", next=request.path))
+        if not isinstance(user, Reviewer):
+            abort(403)
+        return view(*args, **kwargs)
+    return wrapped
+
+
+def _seed_reviewers():
+    """Create reviewer accounts from REVIEWER_ACCOUNTS if they don't exist.
+
+    Format: 'CODE:username:password;CODE:username:password'
+    e.g.    'OU:olive:secret;YV:yvette:secret'
+    Display names come from REVIEWER_NAMES. Existing accounts are never
+    modified here, so rotating a password means deleting and recreating.
+    Returns the number of accounts created.
+    """
+    raw = os.environ.get("REVIEWER_ACCOUNTS", "").strip()
+    if not raw:
+        return 0
+    created = 0
+    for chunk in raw.split(";"):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        parts = chunk.split(":")
+        if len(parts) != 3:
+            print(f"[reviewers] skipping malformed entry: {chunk!r}")
+            continue
+        code, username, password = (p.strip() for p in parts)
+        if not (code and username and password):
+            print(f"[reviewers] skipping incomplete entry: {chunk!r}")
+            continue
+        if Reviewer.query.filter(
+            db.or_(Reviewer.code == code, Reviewer.username == username)
+        ).first():
+            continue
+        r = Reviewer(code=code, username=username,
+                     display_name=REVIEWER_NAMES.get(code, code))
+        r.set_password(password)
+        db.session.add(r)
+        created += 1
+    return created
+
+
 # ---------------------------------------------------------------------------
 # Extensions — module-level singletons, bound to each app via init_app().
 # (Factory pattern: the app can be created more than once — e.g. in tests —
@@ -287,7 +398,20 @@ def create_app(config_overrides=None):
 
     @login_manager.user_loader
     def load_user(user_id):
-        return db.session.get(Admin, int(user_id))
+        # Session ids are 'admin:<id>' or 'reviewer:<id>'. A bare integer is
+        # an admin session from before reviewer accounts existed.
+        kind, _, raw = str(user_id).partition(":")
+        if not raw:
+            kind, raw = "admin", kind
+        try:
+            pk = int(raw)
+        except ValueError:
+            return None
+        if kind == "reviewer":
+            return db.session.get(Reviewer, pk)
+        if kind == "admin":
+            return db.session.get(Admin, pk)
+        return None
 
     # ---------------------------------------------------------------
     # Security headers
@@ -321,6 +445,7 @@ def create_app(config_overrides=None):
         migrate_add_provenance_columns(app)
         migrate_add_suggestion_resolved(app)
         migrate_add_validation_status(app)
+        migrate_add_shown_rw(app)
         migrate_fix_contributor_attribution(app)
 
         from seed_data import STARTER_TERMS, ADMIN_USERNAME, ADMIN_PASSWORD
@@ -338,13 +463,17 @@ def create_app(config_overrides=None):
             db.session.add(admin)
             admin_created = True
 
+        reviewers_created = _seed_reviewers()
+
         # Commit if anything was staged — not only when new terms were added.
         # Otherwise a freshly-created admin (e.g. after rotating ADMIN_USERNAME)
         # would be silently rolled back and you'd be locked out.
-        if added > 0 or admin_created:
+        if added > 0 or admin_created or reviewers_created:
             db.session.commit()
             if added > 0:
                 print(f"Auto-seed: added {added} new terms (total: {Term.query.count()})")
+            if reviewers_created:
+                print(f"[reviewers] created {reviewers_created} reviewer account(s)")
 
     # -------------------------------------------------------------------
     # PUBLIC ROUTES
@@ -446,6 +575,8 @@ def create_app(config_overrides=None):
     @limiter.limit("5 per minute")
     def admin_login():
         if current_user.is_authenticated:
+            if isinstance(_actual_user(), Reviewer):
+                return redirect(url_for("review_queue"))
             return redirect(url_for("admin_dashboard"))
 
         if request.method == "POST":
@@ -473,7 +604,7 @@ def create_app(config_overrides=None):
         return redirect(url_for("index"))
 
     @app.route("/admin")
-    @login_required
+    @admin_required
     def admin_dashboard():
         total_terms = Term.query.count()
         # Active = not yet resolved (regardless of status)
@@ -519,7 +650,7 @@ def create_app(config_overrides=None):
         )
 
     @app.route("/admin/add", methods=["GET", "POST"])
-    @login_required
+    @admin_required
     def admin_add_term():
         if request.method == "POST":
             term = Term(
@@ -538,7 +669,7 @@ def create_app(config_overrides=None):
         return render_template("admin/add_term.html")
 
     @app.route("/admin/edit/<int:term_id>", methods=["GET", "POST"])
-    @login_required
+    @admin_required
     def admin_edit_term(term_id):
         term = Term.query.get_or_404(term_id)
         if request.method == "POST":
@@ -555,7 +686,7 @@ def create_app(config_overrides=None):
         return render_template("admin/add_term.html", term=term, editing=True)
 
     @app.route("/admin/delete/<int:term_id>", methods=["POST"])
-    @login_required
+    @admin_required
     def admin_delete_term(term_id):
         term = Term.query.get_or_404(term_id)
         english = term.english
@@ -565,7 +696,7 @@ def create_app(config_overrides=None):
         return redirect(url_for("admin_dashboard"))
 
     @app.route("/admin/suggestion/<int:suggestion_id>/<action>", methods=["POST"])
-    @login_required
+    @admin_required
     def admin_handle_suggestion(suggestion_id, action):
         suggestion = Suggestion.query.get_or_404(suggestion_id)
         if action == "approve":
@@ -583,7 +714,7 @@ def create_app(config_overrides=None):
         return redirect(url_for("admin_dashboard"))
 
     @app.route("/admin/suggestion/<int:suggestion_id>/resolve", methods=["POST"])
-    @login_required
+    @admin_required
     def admin_resolve_suggestion(suggestion_id):
         """Mark a suggestion as resolved — moves it to the archive."""
         suggestion = Suggestion.query.get_or_404(suggestion_id)
@@ -597,7 +728,7 @@ def create_app(config_overrides=None):
         return redirect(url_for("admin_dashboard"))
 
     @app.route("/admin/suggestion/<int:suggestion_id>/unresolve", methods=["POST"])
-    @login_required
+    @admin_required
     def admin_unresolve_suggestion(suggestion_id):
         """Restore a resolved suggestion back to the active panel."""
         suggestion = Suggestion.query.get_or_404(suggestion_id)
@@ -609,6 +740,186 @@ def create_app(config_overrides=None):
             "info"
         )
         return redirect(url_for("admin_dashboard"))
+
+    # -------------------------------------------------------------------
+    # REVIEWER ROUTES — the scoring interface for the validation round
+    # -------------------------------------------------------------------
+
+    def _review_queue_for(reviewer):
+        """Return (eligible, remaining, ordered_next) for this reviewer.
+
+        eligible: every term this reviewer may score. Excludes the guideline
+                  anchors and any term the reviewer contributed (author
+                  exclusion, mirrored here so they never even see it).
+        remaining: eligible terms with no blind score from this reviewer yet.
+        ordered_next: remaining, in a randomised order that is stable for
+                  this reviewer (hash of code + id), with terms they chose
+                  to skip pushed to the end.
+        """
+        author_name = REVIEWER_NAMES.get(reviewer.code)
+        scored_ids = {
+            r.term_id for r in TermReview.query
+            .filter_by(reviewer=reviewer.code, is_adjudication=False).all()
+        }
+        eligible = [
+            t for t in Term.query.all()
+            if t.english not in REVIEW_EXCLUDED_TERMS
+            and not (author_name and t.contributed_by == author_name)
+        ]
+        eligible.sort(key=lambda t: hashlib.sha256(
+            f"{reviewer.code}:{t.id}".encode()).hexdigest())
+        remaining = [t for t in eligible if t.id not in scored_ids]
+        skipped = set(session.get("review_skipped", []))
+        ordered_next = ([t for t in remaining if t.id not in skipped]
+                        + [t for t in remaining if t.id in skipped])
+        return eligible, remaining, ordered_next
+
+    def _reviewer_may_score(reviewer, term):
+        author_name = REVIEWER_NAMES.get(reviewer.code)
+        if term.english in REVIEW_EXCLUDED_TERMS:
+            return False
+        if author_name and term.contributed_by == author_name:
+            return False
+        return True
+
+    def _previous_blind_score(reviewer, term):
+        return (TermReview.query
+                .filter_by(term_id=term.id, reviewer=reviewer.code,
+                           is_adjudication=False)
+                .order_by(TermReview.reviewed_at.desc(), TermReview.id.desc())
+                .first())
+
+    @app.route("/review/login", methods=["GET", "POST"])
+    @limiter.limit("5 per minute")
+    def review_login():
+        if current_user.is_authenticated:
+            if isinstance(_actual_user(), Reviewer):
+                return redirect(url_for("review_queue"))
+            return redirect(url_for("admin_dashboard"))
+
+        if request.method == "POST":
+            username = request.form.get("username", "").strip()
+            password = request.form.get("password", "")
+            reviewer = Reviewer.query.filter_by(username=username).first()
+            if reviewer and reviewer.active and reviewer.check_password(password):
+                login_user(reviewer)
+                session.pop("review_skipped", None)
+                flash(f"Welcome, {reviewer.display_name}.", "success")
+                next_page = request.args.get("next")
+                if not is_safe_redirect_target(next_page):
+                    next_page = None
+                return redirect(next_page or url_for("review_queue"))
+            flash("Invalid username or password.", "danger")
+
+        return render_template("review/login.html")
+
+    @app.route("/review/logout")
+    @reviewer_required
+    def review_logout():
+        logout_user()
+        session.pop("review_skipped", None)
+        flash("You have been logged out.", "info")
+        return redirect(url_for("index"))
+
+    @app.route("/review")
+    @reviewer_required
+    def review_queue():
+        reviewer = _actual_user()
+        eligible, remaining, ordered_next = _review_queue_for(reviewer)
+        if not ordered_next:
+            return render_template(
+                "review/done.html",
+                reviewer=reviewer,
+                total=len(eligible),
+            )
+        return redirect(url_for("review_term", term_id=ordered_next[0].id))
+
+    @app.route("/review/term/<int:term_id>")
+    @reviewer_required
+    def review_term(term_id):
+        reviewer = _actual_user()
+        term = db.get_or_404(Term, term_id)
+        if not _reviewer_may_score(reviewer, term):
+            abort(403)
+        eligible, remaining, _ = _review_queue_for(reviewer)
+        return render_template(
+            "review/score.html",
+            reviewer=reviewer,
+            term=term,
+            previous=_previous_blind_score(reviewer, term),
+            done=len(eligible) - len(remaining),
+            total=len(eligible),
+        )
+
+    @app.route("/review/term/<int:term_id>/score", methods=["POST"])
+    @reviewer_required
+    def review_score(term_id):
+        reviewer = _actual_user()
+        term = db.get_or_404(Term, term_id)
+        if not _reviewer_may_score(reviewer, term):
+            abort(403)
+
+        try:
+            score = int(request.form.get("score", ""))
+        except ValueError:
+            abort(400)
+        if score not in (1, 2, 3, 4):
+            abort(400)
+
+        previous = _previous_blind_score(reviewer, term)
+        if previous and request.form.get("confirm_replace") != "yes":
+            flash("You have already scored this term. Tick the box to confirm "
+                  "you want to replace your earlier score.", "warning")
+            return redirect(url_for("review_term", term_id=term.id))
+
+        row = TermReview(
+            term_id=term.id,
+            reviewer=reviewer.code,
+            score=score,
+            proposed_rw=request.form.get("proposed_rw", "").strip() or None,
+            note=request.form.get("note", "").strip() or None,
+            # What was actually on screen, from the hidden field the page
+            # rendered; falls back to the current string if it is missing.
+            shown_rw=(request.form.get("shown_rw", "").strip() or term.kinyarwanda),
+            is_adjudication=False,
+        )
+        db.session.add(row)
+        recompute_validation_status(term)
+        db.session.commit()
+
+        skipped = session.get("review_skipped", [])
+        if term.id in skipped:
+            skipped.remove(term.id)
+            session["review_skipped"] = skipped
+
+        flash("Saved.", "success")
+        return redirect(url_for("review_queue"))
+
+    @app.route("/review/term/<int:term_id>/skip", methods=["POST"])
+    @reviewer_required
+    def review_skip(term_id):
+        term = db.get_or_404(Term, term_id)
+        skipped = session.get("review_skipped", [])
+        if term.id not in skipped:
+            skipped.append(term.id)
+            session["review_skipped"] = skipped
+        return redirect(url_for("review_queue"))
+
+    @app.route("/review/guideline")
+    @reviewer_required
+    def review_guideline():
+        path = os.path.join(app.root_path, "REVIEWER_GUIDELINE.md")
+        html = None
+        text = None
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as fh:
+                text = fh.read()
+            try:
+                import markdown  # optional dependency; falls back to plain text
+                html = markdown.markdown(text)
+            except ImportError:
+                html = None
+        return render_template("review/guideline.html", html=html, text=text)
 
     return app
 

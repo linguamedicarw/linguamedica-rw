@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+
+{% block title %}Score a term{% endblock %}
+
+{% block content %}
+<section class="form-section">
+    <div class="admin-section" style="display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; flex-wrap: wrap;">
+        <div>
+            <strong>{{ reviewer.display_name }}</strong>
+            <span class="label-hint"> · scored {{ done }} of {{ total }}</span>
+        </div>
+        <div>
+            <a href="{{ url_for('review_guideline') }}" class="btn btn-small btn-outline">Guideline</a>
+            <a href="{{ url_for('review_logout') }}" class="btn btn-small btn-outline">Log out</a>
+        </div>
+    </div>
+
+    <h1 style="margin-top: 1rem;">{{ term.english }}</h1>
+    <p style="font-size: 1.5rem; margin: 0.25rem 0 1rem;">{{ term.kinyarwanda }}</p>
+    {% if term.category %}<p class="label-hint">Category: {{ term.category }}</p>{% endif %}
+    {% if term.example_en or term.example_rw %}
+        <div class="admin-section">
+            {% if term.example_en %}<p><em>{{ term.example_en }}</em></p>{% endif %}
+            {% if term.example_rw %}<p><em>{{ term.example_rw }}</em></p>{% endif %}
+        </div>
+    {% endif %}
+
+    {% if previous %}
+    <div class="flash flash-warning" style="background: #fbf2cf; color: #8a6f08; border: 1px solid #b59410;">
+        You scored this term <strong>{{ previous.score }}</strong> on {{ previous.reviewed_at.strftime('%d %b %Y') if previous.reviewed_at else 'an earlier date' }}.
+        Submitting again replaces that score in the statistics. Your earlier score stays in the record.
+    </div>
+    {% endif %}
+
+    <form method="POST" action="{{ url_for('review_score', term_id=term.id) }}" class="term-form" id="scoreForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="shown_rw" value="{{ term.kinyarwanda }}">
+
+        <div class="form-group">
+            <label>How adequately does the Kinyarwanda render the English concept?</label>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.6rem; margin-top: 0.5rem;">
+                <button type="submit" name="score" value="4" class="btn btn-outline">4 · Fully correct and idiomatic</button>
+                <button type="submit" name="score" value="3" class="btn btn-outline">3 · Correct meaning, minor issue of form</button>
+                <button type="submit" name="score" value="2" class="btn btn-outline">2 · Partially correct, meaning incomplete</button>
+                <button type="submit" name="score" value="1" class="btn btn-outline">1 · Incorrect or misleading</button>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="proposed_rw">Alternative rendering <span class="label-hint">(optional)</span></label>
+            <input type="text" id="proposed_rw" name="proposed_rw" class="form-input" maxlength="200" autocomplete="off">
+        </div>
+
+        <div class="form-group">
+            <label for="note">Comment <span class="label-hint">(optional: a weak variant, a register note, anything the editor should know)</span></label>
+            <textarea id="note" name="note" rows="2" class="form-input"></textarea>
+        </div>
+
+        {% if previous %}
+        <div class="form-group">
+            <label>
+                <input type="checkbox" name="confirm_replace" value="yes">
+                I confirm I want to replace my earlier score for this term.
+            </label>
+        </div>
+        {% endif %}
+    </form>
+
+    <form method="POST" action="{{ url_for('review_skip', term_id=term.id) }}" style="margin-top: 0.5rem;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn-small btn-outline">Skip for now, come back later</button>
+    </form>
+
+    <div class="archive-toggle" onclick="toggleQuickRef()" style="margin-top: 1.5rem;">
+        <h3><span id="quickRefArrow">▶</span> Quick reference: the four levels</h3>
+    </div>
+    <div id="quickRef" style="display: none;">
+        <p><strong>4</strong> Fully correct and idiomatic. Publish as is.</p>
+        <p><strong>3</strong> Correct meaning, with a minor problem of spelling, phrasing or register. A native speaker reads straight through it.</p>
+        <p><strong>2</strong> Partially correct. Meaning incomplete or distorted, typically a specifier missing.</p>
+        <p><strong>1</strong> Incorrect or misleading. Names the wrong thing with confidence.</p>
+        <p class="label-hint">Entries with several forms separated by slashes: score the set as presented and flag a weak variant in the comment. Borrowing is not a failure. You are scoring a headword standing alone, not what a speaker would say in context. Full worked examples are in the guideline.</p>
+    </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleQuickRef() {
+    var panel = document.getElementById('quickRef');
+    var arrow = document.getElementById('quickRefArrow');
+    if (panel.style.display === 'none') { panel.style.display = 'block'; arrow.textContent = '▼'; }
+    else { panel.style.display = 'none'; arrow.textContent = '▶'; }
+}
+</script>
+{% endblock %}
