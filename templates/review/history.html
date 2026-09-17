@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block title %}Scored so far{% endblock %}
+
+{% block content %}
+<section class="form-section">
+    <div class="admin-section review-header">
+        <div>
+            <strong>{{ reviewer.display_name }}</strong>
+            <span class="label-hint"> · scored {{ done }} of {{ total }}</span>
+        </div>
+        <div class="review-header-links">
+            <a href="{{ url_for('review_queue') }}" class="btn btn-small btn-primary">Back to scoring</a>
+            <a href="{{ url_for('review_guideline') }}" class="btn btn-small btn-outline">Guideline</a>
+            <a href="{{ url_for('review_logout') }}" class="btn btn-small btn-outline">Log out</a>
+        </div>
+    </div>
+
+    <h1 style="margin-top: 1rem;">Scored so far</h1>
+    {% if round_closed %}
+    <p class="label-hint">The round is closed. This list stays as your record; scores can no longer be changed.</p>
+    {% else %}
+    <p class="label-hint">Open any term to change its score; a replacement needs the confirmation tick, and your earlier score stays in the record. Correcting a slip is welcome. If you find that your reading has shifted and many early terms now look different to you, tell the editor rather than working back through them, because a systematic revision changes what the statistics measure.</p>
+    {% endif %}
+
+    {% if entries %}
+    <div style="overflow-x: auto;">
+    <table class="admin-table">
+        <thead>
+            <tr>
+                <th>English</th>
+                <th>Kinyarwanda you saw</th>
+                <th>Score</th>
+                <th>When</th>
+                <th>Notes</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for e in entries %}
+            {% set r = e.row %}
+            <tr>
+                <td><strong>{{ r.term.english }}</strong></td>
+                <td>{{ r.shown_rw or r.term.kinyarwanda }}</td>
+                <td><span class="score-pill score-pill-{{ r.score }}">{{ r.score }}</span>{% if e.times > 1 %} <span class="label-hint">(changed {{ e.times - 1 }}×)</span>{% endif %}</td>
+                <td class="label-hint">{{ r.reviewed_at.strftime('%d %b %Y') if r.reviewed_at else '' }}</td>
+                <td class="label-hint">{% if r.proposed_rw %}<em>{{ r.proposed_rw }}</em>{% endif %}{% if r.proposed_rw and r.note %} · {% endif %}{{ r.note or '' }}</td>
+                <td style="text-align: right; white-space: nowrap;">
+                    {% if round_closed %}
+                    <a href="{{ url_for('review_term', term_id=r.term_id) }}" class="btn btn-small btn-outline">View</a>
+                    {% else %}
+                    <a href="{{ url_for('review_term', term_id=r.term_id) }}" class="btn btn-small btn-outline">Change</a>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    <p class="label-hint" style="margin-top: 0.75rem;">{{ entries|length }} term{{ '' if entries|length == 1 else 's' }} scored{% if rescored %}, {{ rescored }} changed after the first score{% endif %}.</p>
+    {% else %}
+    <p>You have not scored any terms yet. <a href="{{ url_for('review_queue') }}">Start with the first term in your queue.</a></p>
+    {% endif %}
+</section>
+{% endblock %}

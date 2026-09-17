@@ -17,9 +17,10 @@ Security features:
 import os
 import hashlib
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from functools import wraps
 from urllib.parse import urlparse
+from markupsafe import Markup
 from flask import (
     Flask, render_template, request, redirect,
     url_for, flash, jsonify, abort, session
@@ -293,6 +294,77 @@ REVIEW_EXCLUDED_TERMS = {
 
 
 # ---------------------------------------------------------------------------
+# Round settings.
+# REVIEW_DAILY_GOAL is the rhythm agreed with the reviewers (ten a day on the
+# days they can); the score page shows progress against it. "Today" is
+# measured from local midnight in Kigali (UTC+2, no daylight saving), which
+# REVIEW_TZ_OFFSET_HOURS fixes. REVIEW_ROUND_CLOSED freezes every reviewer's
+# scores once the round ends, so adjudication and the agreement statistics
+# run on a fixed set; set it to 1 in the environment to close the round.
+# ---------------------------------------------------------------------------
+REVIEW_DAILY_GOAL = int(os.environ.get("REVIEW_DAILY_GOAL", "10") or 10)
+REVIEW_TZ_OFFSET_HOURS = int(os.environ.get("REVIEW_TZ_OFFSET_HOURS", "2") or 2)
+REVIEW_ROUND_CLOSED = (
+    os.environ.get("REVIEW_ROUND_CLOSED", "").strip().lower() in ("1", "true", "yes")
+)
+
+
+def _review_tz():
+    return timezone(timedelta(hours=REVIEW_TZ_OFFSET_HOURS))
+
+
+def _naive_utc(dt):
+    """Stored timestamps are naive UTC; normalise an aware value to match."""
+    if dt is None:
+        return None
+    if dt.tzinfo is not None:
+        return dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt
+
+
+def _local_day_start_utc(days_ago=0):
+    """Naive UTC datetime of local midnight, `days_ago` days back."""
+    now_local = datetime.now(_review_tz())
+    start_local = (now_local - timedelta(days=days_ago)).replace(
+        hour=0, minute=0, second=0, microsecond=0)
+    return start_local.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _local_date(dt):
+    """Local calendar date (Kigali) of a stored naive-UTC timestamp."""
+    return _naive_utc(dt).replace(tzinfo=timezone.utc).astimezone(_review_tz()).date()
+
+
+def reviewer_progress(reviewer, days=14):
+    """Counts for one reviewer: distinct terms scored, scored today, scored in
+    the last seven days, latest activity, and a per-day series for the last
+    `days` local days (oldest first). Blind scores only."""
+    rows = (TermReview.query
+            .filter_by(reviewer=reviewer.code, is_adjudication=False)
+            .order_by(TermReview.reviewed_at.desc(), TermReview.id.desc())
+            .all())
+    total = len({r.term_id for r in rows})
+    today_start = _local_day_start_utc(0)
+    week_start = _local_day_start_utc(6)
+    today = len({r.term_id for r in rows
+                 if r.reviewed_at and _naive_utc(r.reviewed_at) >= today_start})
+    week = len({r.term_id for r in rows
+                if r.reviewed_at and _naive_utc(r.reviewed_at) >= week_start})
+    latest = rows[0] if rows else None
+    today_local = datetime.now(_review_tz()).date()
+    series = []
+    for i in range(days - 1, -1, -1):
+        day = today_local - timedelta(days=i)
+        count = len({r.term_id for r in rows
+                     if r.reviewed_at and _local_date(r.reviewed_at) == day})
+        series.append((day, count))
+    return {
+        "total": total, "today": today, "week": week,
+        "latest": latest, "series": series,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Access control — admin and reviewer are different kinds of session
 # ---------------------------------------------------------------------------
 def _actual_user():
@@ -384,6 +456,8 @@ def create_app(config_overrides=None):
     app.config.from_object(Config)
     if config_overrides:
         app.config.update(config_overrides)
+    app.config.setdefault("REVIEW_ROUND_CLOSED", REVIEW_ROUND_CLOSED)
+    app.config.setdefault("REVIEW_DAILY_GOAL", REVIEW_DAILY_GOAL)
 
     # Initialize extensions
     db.init_app(app)
@@ -637,6 +711,12 @@ def create_app(config_overrides=None):
             func.count(SearchLog.id).desc()
         ).limit(20).all()
 
+        # --- Reviewer progress (the weekly check-in, without asking) ---
+        reviewers = Reviewer.query.order_by(Reviewer.code.asc()).all()
+        reviewer_progress_rows = [
+            (rv, reviewer_progress(rv)) for rv in reviewers
+        ]
+
         return render_template(
             "admin/dashboard.html",
             total_terms=total_terms,
@@ -647,7 +727,31 @@ def create_app(config_overrides=None):
             total_searches=total_searches,
             top_queries=top_queries,
             no_results_queries=no_results_queries,
+            reviewer_progress_rows=reviewer_progress_rows,
+            daily_goal=app.config["REVIEW_DAILY_GOAL"],
+            round_closed=app.config["REVIEW_ROUND_CLOSED"],
         )
+
+    @app.route("/admin/reviewer/<int:reviewer_id>/password", methods=["POST"])
+    @admin_required
+    def admin_reviewer_password(reviewer_id):
+        """Set a new password for a reviewer account.
+
+        REVIEWER_ACCOUNTS only creates accounts that do not exist yet, so this
+        is the way to rotate a password once the account is live. The new
+        password is never logged or shown back; hand it to the reviewer over
+        a separate channel from the login link.
+        """
+        reviewer = db.get_or_404(Reviewer, reviewer_id)
+        new_password = request.form.get("new_password", "")
+        if len(new_password) < 12:
+            flash("The new password must be at least 12 characters long.", "danger")
+            return redirect(url_for("admin_dashboard"))
+        reviewer.set_password(new_password)
+        db.session.commit()
+        flash(f"Password updated for {reviewer.display_name} ({reviewer.username}).",
+              "success")
+        return redirect(url_for("admin_dashboard"))
 
     @app.route("/admin/add", methods=["GET", "POST"])
     @admin_required
@@ -842,13 +946,21 @@ def create_app(config_overrides=None):
         if not _reviewer_may_score(reviewer, term):
             abort(403)
         eligible, remaining, _ = _review_queue_for(reviewer)
+        progress = reviewer_progress(reviewer, days=1)
+        latest = progress["latest"]
+        previous_term = (latest.term if latest and latest.term_id != term.id else None)
         return render_template(
             "review/score.html",
             reviewer=reviewer,
             term=term,
             previous=_previous_blind_score(reviewer, term),
+            previous_term=previous_term,
             done=len(eligible) - len(remaining),
             total=len(eligible),
+            today_count=progress["today"],
+            daily_goal=app.config["REVIEW_DAILY_GOAL"],
+            history_count=progress["total"],
+            round_closed=app.config["REVIEW_ROUND_CLOSED"],
         )
 
     @app.route("/review/term/<int:term_id>/score", methods=["POST"])
@@ -859,8 +971,17 @@ def create_app(config_overrides=None):
         if not _reviewer_may_score(reviewer, term):
             abort(403)
 
+        if app.config["REVIEW_ROUND_CLOSED"]:
+            flash("The round is closed, so scores can no longer be added or "
+                  "changed. Your scored terms are still listed below.", "warning")
+            return redirect(url_for("review_history"))
+
+        raw_score = request.form.get("score", "").strip()
+        if not raw_score:
+            flash("Choose a score first, then press Save.", "warning")
+            return redirect(url_for("review_term", term_id=term.id))
         try:
-            score = int(request.form.get("score", ""))
+            score = int(raw_score)
         except ValueError:
             abort(400)
         if score not in (1, 2, 3, 4):
@@ -892,7 +1013,18 @@ def create_app(config_overrides=None):
             skipped.remove(term.id)
             session["review_skipped"] = skipped
 
-        flash("Saved.", "success")
+        extras = []
+        if row.proposed_rw:
+            extras.append("your alternative rendering")
+        if row.note:
+            extras.append("your comment")
+        with_what = (" with " + " and ".join(extras)) if extras else ""
+        # One <span> so the flex-layout flash box keeps the spaces between words.
+        flash(Markup(
+            '<span>Saved: <strong>{}</strong> scored <strong>{}</strong>{}. '
+            '<a href="{}">Change it</a></span>'
+        ).format(term.english, score, with_what,
+                 url_for("review_term", term_id=term.id)), "success")
         return redirect(url_for("review_queue"))
 
     @app.route("/review/term/<int:term_id>/skip", methods=["POST"])
@@ -904,6 +1036,36 @@ def create_app(config_overrides=None):
             skipped.append(term.id)
             session["review_skipped"] = skipped
         return redirect(url_for("review_queue"))
+
+    @app.route("/review/history")
+    @reviewer_required
+    def review_history():
+        """Every term this reviewer has scored, newest first, one row per term
+        with the latest blind score. Rows link back to the term so a verdict
+        can be changed through the usual confirmation, until the round closes."""
+        reviewer = _actual_user()
+        rows = (TermReview.query
+                .filter_by(reviewer=reviewer.code, is_adjudication=False)
+                .order_by(TermReview.reviewed_at.desc(), TermReview.id.desc())
+                .all())
+        seen = {}
+        for r in rows:
+            entry = seen.get(r.term_id)
+            if entry is None:
+                seen[r.term_id] = {"row": r, "times": 1}
+            else:
+                entry["times"] += 1
+        entries = list(seen.values())
+        eligible, remaining, _ = _review_queue_for(reviewer)
+        return render_template(
+            "review/history.html",
+            reviewer=reviewer,
+            entries=entries,
+            done=len(eligible) - len(remaining),
+            total=len(eligible),
+            rescored=sum(1 for e in entries if e["times"] > 1),
+            round_closed=app.config["REVIEW_ROUND_CLOSED"],
+        )
 
     @app.route("/review/guideline")
     @reviewer_required

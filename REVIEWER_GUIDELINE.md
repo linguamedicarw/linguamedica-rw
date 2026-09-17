@@ -105,18 +105,20 @@ Many entries list variants separated by slashes, for example *Impozamarira / Ins
 
 **Logging in.** Go to linguamedica.rw/review/login and sign in with the username and password you were given. They are yours alone; please do not share them.
 
-**The queue.** After login the page shows you one term at a time: the English term, the Kinyarwanda rendering, the category, and the example sentences. A counter shows how far through your queue you are. The order is random and fixed for you, so you cannot choose which term comes next, and the other reviewer sees the same terms in a different order.
+**The queue.** After login the page shows you one term at a time: the English term, the Kinyarwanda rendering, the category, and the example sentences. Two counters at the top show how far through your queue you are and how many terms you have scored today. The order is random and fixed for you, so you cannot choose which term comes next, and the other reviewer sees the same terms in a different order.
 
-**Scoring.** Press one of the four buttons. That records your score and moves you to the next term. Before you press, you can fill in two optional fields:
+**Scoring.** Two optional fields come first:
 
 - *Alternative rendering*: if you would render the term differently, type your rendering here. It does not change the score you give to the rendering shown.
 - *Comment*: a weak variant in a multi-form entry, a register note, a doubt, an English misspelling, anything the editor should know.
+
+Then choose one of the four scores. Choosing does not save anything yet: a line under the choices repeats what you are about to record, for example "You are giving Mental health a 3, with your comment", and you can still change your mind. Press *Save and go to the next term* to record it. The next page opens with a green message naming the term and the score you gave, with a *Change it* link in case you pressed the wrong one. On a keyboard, the keys 1 to 4 choose a score and Enter saves.
 
 **Skipping.** *Skip for now, come back later* moves the term to the end of your queue without scoring it. Use it when you want to think, or check a reference, and carry on.
 
 **Stopping and resuming.** You can log out at any point. Your place is kept, and the next login shows you the next unscored term.
 
-**Changing a score.** If you return to a term you have already scored, the page asks you to tick *I confirm I want to replace my earlier score for this term* before it accepts a new one. Your earlier score stays in the record; the new one is the one that counts. If, some way into the round, you realise you would now score an early term differently, tell the editor rather than going back through many terms: a note about how your reading shifted is more useful than a rescored batch.
+**Changing a score.** *Scored so far*, at the top of the scoring page, lists each term you have scored with its score and date. Open any of them to change your verdict; the page asks you to tick *I confirm I want to replace my earlier score for this term* before it accepts a new one. Your earlier score stays in the record; the new one is the one that counts. A *Previous term* link on the scoring page takes you straight back to the last term you scored. Correcting a slip is welcome. If, some way into the round, you realise you would now score many early terms differently, tell the editor rather than going back through them: a note about how your reading shifted is more useful than a rescored batch, because a systematic revision changes what the statistics measure. Once the round closes, the list stays as your record but scores can no longer be changed.
 
 **Finishing.** When the queue is empty the page says *Nothing left to score*. If terms are added to the round later, they appear at your next login.
 

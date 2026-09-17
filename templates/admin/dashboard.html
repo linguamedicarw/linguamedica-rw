@@ -24,6 +24,65 @@
 </div>
 
 <!-- ============================================================
+     REVIEWER PROGRESS — the weekly check-in, read from the data
+     ============================================================ -->
+<section class="admin-section">
+    <h2>Reviewer progress</h2>
+    <p class="label-hint" style="margin-bottom: 1rem;">
+        Distinct terms scored per reviewer (blind scores only). The daily goal is {{ daily_goal }} on the days they can; days are counted from midnight in Kigali.
+        {% if round_closed %}<strong>The round is closed:</strong> reviewers can read their lists but not add or change scores.{% else %}The round is open.{% endif %}
+    </p>
+    {% if reviewer_progress_rows %}
+    <div style="overflow-x: auto;">
+    <table class="admin-table">
+        <thead>
+            <tr>
+                <th>Reviewer</th>
+                <th>Total</th>
+                <th>Today</th>
+                <th>Last 7 days</th>
+                <th>Last 14 days</th>
+                <th>Last activity</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for rv, pg in reviewer_progress_rows %}
+            <tr>
+                <td><strong>{{ rv.display_name }}</strong><br><span class="label-hint">{{ rv.code }} · {{ rv.username }}{% if not rv.active %} · inactive{% endif %}</span></td>
+                <td><strong>{{ pg.total }}</strong></td>
+                <td>{{ pg.today }} <span class="label-hint">of {{ daily_goal }}</span></td>
+                <td>{{ pg.week }}</td>
+                <td style="min-width: 130px;">
+                    <div class="progress-days" title="{% for day, n in pg.series %}{{ day.strftime('%d %b') }}: {{ n }}{% if not loop.last %} · {% endif %}{% endfor %}">
+                        {% for day, n in pg.series %}
+                        {% set h = 4 if n == 0 else (34 if n >= daily_goal else (8 + (26 * n) // daily_goal)) %}
+                        <div class="progress-day {% if n >= daily_goal %}progress-day-hit{% elif n > 0 %}progress-day-some{% endif %}" style="height: {{ h }}px;" title="{{ day.strftime('%d %b') }}: {{ n }}"></div>
+                        {% endfor %}
+                    </div>
+                </td>
+                <td class="label-hint" style="white-space: nowrap;">{% if pg.latest and pg.latest.reviewed_at %}{{ pg.latest.reviewed_at.strftime('%d %b %Y') }}{% else %}not yet{% endif %}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+
+    <h3 style="margin-top: 1.25rem; font-size: 1rem;">Reset a reviewer password</h3>
+    <p class="label-hint" style="margin-bottom: 0.6rem;">A new password takes effect immediately and is not shown again; send it to the reviewer separately from the login link.</p>
+    {% for rv, pg in reviewer_progress_rows %}
+    <form method="POST" action="{{ url_for('admin_reviewer_password', reviewer_id=rv.id) }}" class="password-reset-row">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label for="pw-{{ rv.id }}"><strong>{{ rv.display_name }}</strong> <span class="label-hint">({{ rv.username }})</span></label>
+        <input type="password" id="pw-{{ rv.id }}" name="new_password" class="form-input" minlength="12" autocomplete="new-password" placeholder="12+ characters" required>
+        <button type="submit" class="btn btn-small btn-outline">Set</button>
+    </form>
+    {% endfor %}
+    {% else %}
+    <p class="label-hint">No reviewer accounts yet. They are created at boot from <code>REVIEWER_ACCOUNTS</code>.</p>
+    {% endif %}
+</section>
+
+<!-- ============================================================
      TERMS PEOPLE CAN'T FIND — priority queue for new terms
      ============================================================ -->
 {% if no_results_queries %}

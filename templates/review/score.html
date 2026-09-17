@@ -4,12 +4,14 @@
 
 {% block content %}
 <section class="form-section">
-    <div class="admin-section" style="display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; flex-wrap: wrap;">
+    <div class="admin-section review-header">
         <div>
             <strong>{{ reviewer.display_name }}</strong>
             <span class="label-hint"> · scored {{ done }} of {{ total }}</span>
+            <span class="label-hint review-today"> · today {{ today_count }} of {{ daily_goal }}</span>
         </div>
-        <div>
+        <div class="review-header-links">
+            <a href="{{ url_for('review_history') }}" class="btn btn-small btn-outline">Scored so far ({{ history_count }})</a>
             <a href="{{ url_for('review_guideline') }}" class="btn btn-small btn-outline">Guideline</a>
             <a href="{{ url_for('review_logout') }}" class="btn btn-small btn-outline">Log out</a>
         </div>
@@ -28,23 +30,16 @@
     {% if previous %}
     <div class="flash flash-warning" style="background: #fbf2cf; color: #8a6f08; border: 1px solid #b59410;">
         You scored this term <strong>{{ previous.score }}</strong> on {{ previous.reviewed_at.strftime('%d %b %Y') if previous.reviewed_at else 'an earlier date' }}.
-        Submitting again replaces that score in the statistics. Your earlier score stays in the record.
+        {% if round_closed %}The round is closed, so this score now stands.{% else %}Saving again replaces that score in the statistics. Your earlier score stays in the record.{% endif %}
     </div>
     {% endif %}
 
+    {% if round_closed %}
+    <p class="label-hint">The round is closed. Scores can no longer be added or changed; you can still read your <a href="{{ url_for('review_history') }}">scored terms</a>.</p>
+    {% else %}
     <form method="POST" action="{{ url_for('review_score', term_id=term.id) }}" class="term-form" id="scoreForm">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="shown_rw" value="{{ term.kinyarwanda }}">
-
-        <div class="form-group">
-            <label>How adequately does the Kinyarwanda render the English concept?</label>
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.6rem; margin-top: 0.5rem;">
-                <button type="submit" name="score" value="4" class="btn btn-outline">4 · Fully correct and idiomatic</button>
-                <button type="submit" name="score" value="3" class="btn btn-outline">3 · Correct meaning, minor issue of form</button>
-                <button type="submit" name="score" value="2" class="btn btn-outline">2 · Partially correct, meaning incomplete</button>
-                <button type="submit" name="score" value="1" class="btn btn-outline">1 · Incorrect or misleading</button>
-            </div>
-        </div>
 
         <div class="form-group">
             <label for="proposed_rw">Alternative rendering <span class="label-hint">(optional)</span></label>
@@ -56,20 +51,43 @@
             <textarea id="note" name="note" rows="2" class="form-input"></textarea>
         </div>
 
+        <div class="form-group">
+            <label>How adequately does the Kinyarwanda render the English concept?</label>
+            <div class="score-choices" role="radiogroup" aria-label="Score">
+                <label class="score-choice"><input type="radio" name="score" value="4" id="score4"><span>4 · Fully correct and idiomatic</span></label>
+                <label class="score-choice"><input type="radio" name="score" value="3" id="score3"><span>3 · Correct meaning, minor issue of form</span></label>
+                <label class="score-choice"><input type="radio" name="score" value="2" id="score2"><span>2 · Partially correct, meaning incomplete</span></label>
+                <label class="score-choice"><input type="radio" name="score" value="1" id="score1"><span>1 · Incorrect or misleading</span></label>
+            </div>
+            <p class="label-hint" style="margin-top: 0.5rem;">Choose a score, then press Save. Nothing is stored until you do, and anything typed above is saved with it.</p>
+        </div>
+
         {% if previous %}
         <div class="form-group">
             <label>
-                <input type="checkbox" name="confirm_replace" value="yes">
+                <input type="checkbox" name="confirm_replace" value="yes" id="confirmReplace">
                 I confirm I want to replace my earlier score for this term.
             </label>
         </div>
         {% endif %}
+
+        <p id="scoreSummary" class="score-summary" aria-live="polite">No score chosen yet.</p>
+
+        <div class="form-actions" style="margin-top: 0.75rem;">
+            <button type="submit" class="btn btn-primary" id="saveButton">Save and go to the next term</button>
+        </div>
     </form>
 
-    <form method="POST" action="{{ url_for('review_skip', term_id=term.id) }}" style="margin-top: 0.5rem;">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button type="submit" class="btn btn-small btn-outline">Skip for now, come back later</button>
-    </form>
+    <div class="review-secondary">
+        <form method="POST" action="{{ url_for('review_skip', term_id=term.id) }}" style="display: inline;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-small btn-outline">Skip for now, come back later</button>
+        </form>
+        {% if previous_term %}
+        <a href="{{ url_for('review_term', term_id=previous_term.id) }}" class="btn btn-small btn-outline">Previous term: {{ previous_term.english }}</a>
+        {% endif %}
+    </div>
+    {% endif %}
 
     <div class="archive-toggle" onclick="toggleQuickRef()" style="margin-top: 1.5rem;">
         <h3><span id="quickRefArrow">▶</span> Quick reference: the four levels</h3>
@@ -92,5 +110,49 @@ function toggleQuickRef() {
     if (panel.style.display === 'none') { panel.style.display = 'block'; arrow.textContent = '▼'; }
     else { panel.style.display = 'none'; arrow.textContent = '▶'; }
 }
+(function () {
+    var form = document.getElementById('scoreForm');
+    if (!form) { return; }
+    var termName = {{ term.english|tojson }};
+    var summary = document.getElementById('scoreSummary');
+    var radios = form.querySelectorAll('input[name="score"]');
+    var alt = document.getElementById('proposed_rw');
+    var note = document.getElementById('note');
+
+    function chosen() {
+        for (var i = 0; i < radios.length; i++) { if (radios[i].checked) { return radios[i].value; } }
+        return null;
+    }
+    function refresh() {
+        var s = chosen();
+        if (!s) { summary.textContent = 'No score chosen yet.'; summary.classList.remove('score-summary-ready'); return; }
+        var extras = [];
+        if (alt && alt.value.trim()) { extras.push('your alternative rendering'); }
+        if (note && note.value.trim()) { extras.push('your comment'); }
+        summary.textContent = 'You are giving ' + termName + ' a ' + s + (extras.length ? ', with ' + extras.join(' and ') : '') + '. Press Save to record it.';
+        summary.classList.add('score-summary-ready');
+    }
+    for (var i = 0; i < radios.length; i++) { radios[i].addEventListener('change', refresh); }
+    if (alt) { alt.addEventListener('input', refresh); }
+    if (note) { note.addEventListener('input', refresh); }
+
+    // Keyboard: 1 to 4 choose a score when not typing in a field; Enter saves.
+    document.addEventListener('keydown', function (e) {
+        var tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : '';
+        var typing = (tag === 'input' && e.target.type === 'text') || tag === 'textarea';
+        if (!typing && ['1', '2', '3', '4'].indexOf(e.key) !== -1) {
+            var r = document.getElementById('score' + e.key);
+            if (r) { r.checked = true; refresh(); e.preventDefault(); }
+        }
+    });
+    form.addEventListener('submit', function (e) {
+        if (!chosen()) {
+            e.preventDefault();
+            summary.textContent = 'Choose a score first, then press Save.';
+            summary.classList.add('score-summary-warn');
+        }
+    });
+    refresh();
+})();
 </script>
 {% endblock %}
