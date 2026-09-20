@@ -1365,3 +1365,14 @@ textarea.form-input {
     max-width: 100%;
     padding: 0.4rem 0.6rem;
 }
+
+.result-variants {
+    font-size: 0.9rem;
+    color: var(--color-text-muted);
+    margin: 0.35rem 0 0;
+}
+
+.variants-label {
+    font-weight: 600;
+    color: var(--color-text);
+}

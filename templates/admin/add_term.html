@@ -25,9 +25,19 @@
         </div>
 
         <div class="form-group">
+            <label for="variants">
+                Other Kinyarwanda forms
+                <span class="label-hint">(optional — separate with " / "; searchable, never shown to reviewers for scoring)</span>
+            </label>
+            <input type="text" id="variants" name="variants" class="form-input"
+                   value="{{ (term.variants or '') if editing else '' }}"
+                   placeholder="e.g., Ubugumba">
+        </div>
+
+        <div class="form-group">
             <label for="category">Category</label>
             <input type="text" id="category" name="category" class="form-input"
-                   value="{{ term.category if editing else '' }}"
+                   value="{{ (term.category or '') if editing else '' }}"
                    placeholder="e.g., Cardiology, Anatomy, Infectious Disease">
         </div>
 
@@ -37,20 +47,20 @@
                 <span class="label-hint">(optional — where the term came from)</span>
             </label>
             <input type="text" id="source" name="source" class="form-input"
-                   value="{{ term.source if editing else '' }}"
+                   value="{{ (term.source or '') if editing else '' }}"
                    placeholder="e.g., Ernest pediatric script, OBGYN questionnaire">
         </div>
 
         <div class="form-group">
             <label for="example_en">Example sentence (English)</label>
             <textarea id="example_en" name="example_en" rows="2" class="form-input"
-                      placeholder="e.g., The patient was diagnosed with hypertension.">{{ term.example_en if editing else '' }}</textarea>
+                      placeholder="e.g., The patient was diagnosed with hypertension.">{{ (term.example_en or '') if editing else '' }}</textarea>
         </div>
 
         <div class="form-group">
             <label for="example_rw">Example sentence (Kinyarwanda)</label>
             <textarea id="example_rw" name="example_rw" rows="2" class="form-input"
-                      placeholder="e.g., Umurwayi yasuzumwe afite umuvuduko w'amaraso.">{{ term.example_rw if editing else '' }}</textarea>
+                      placeholder="e.g., Umurwayi yasuzumwe afite umuvuduko w'amaraso.">{{ (term.example_rw or '') if editing else '' }}</textarea>
         </div>
 
         <div class="form-group">
@@ -59,7 +69,7 @@
                 <span class="label-hint">(why this translation makes linguistic sense)</span>
             </label>
             <textarea id="etymology" name="etymology" rows="3" class="form-input"
-                      placeholder="e.g., 'Umuvuduko' means pressure/force, 'w'amaraso' means of the blood...">{{ term.etymology if editing else '' }}</textarea>
+                      placeholder="e.g., 'Umuvuduko' means pressure/force, 'w'amaraso' means of the blood...">{{ (term.etymology or '') if editing else '' }}</textarea>
         </div>
 
         <div class="form-actions">

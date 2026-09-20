@@ -228,7 +228,8 @@
             var matchesLetter = !hasLetter || term.english.charAt(0).toUpperCase() === activeLetter;
             var matchesQuery = !hasQuery ||
                 term.english.toLowerCase().includes(query) ||
-                term.kinyarwanda.toLowerCase().includes(query);
+                term.kinyarwanda.toLowerCase().includes(query) ||
+                (term.variants || '').toLowerCase().includes(query);
             return matchesCategory && matchesLetter && matchesQuery;
         });
 
@@ -270,6 +271,8 @@
                         <h3 class="result-kinyarwanda">${escapeHtml(term.kinyarwanda)}</h3>
                         ${term.category ? `<span class="term-category">${escapeHtml(term.category)}</span>` : ''}
                     </div>
+                    ${term.variants ? `
+                    <p class="result-variants"><span class="variants-label">Also written</span> ${escapeHtml(term.variants)}</p>` : ''}
                     ${term.example_en ? `
                     <div class="result-examples">
                         <p class="example"><span class="example-label">EN:</span> ${escapeHtml(term.example_en)}</p>

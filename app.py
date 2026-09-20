@@ -144,6 +144,33 @@ CONTRIBUTOR_CORRECTIONS = {
 }
 
 
+def migrate_add_variants(app):
+    """Add terms.variants if it doesn't exist.
+
+    Holds alternative Kinyarwanda forms for the same entry, separated by
+    " / ". They are searchable but never scored: reviewers always see the
+    single canonical rendering in `kinyarwanda`, so an adequacy score means
+    the same thing on every row. Idempotent and safe on every startup.
+    """
+    db_uri = app.config['SQLALCHEMY_DATABASE_URI']
+    if db_uri.startswith('postgresql'):
+        _pg_add_columns_if_missing("terms", [
+            ("variants", "VARCHAR(300)"),
+        ])
+        return
+    if not db_uri.startswith('sqlite'):
+        return
+    db_path = db_uri.replace('sqlite:///', '')
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA table_info(terms)")
+    existing = {row[1] for row in cursor.fetchall()}
+    if 'variants' not in existing:
+        cursor.execute("ALTER TABLE terms ADD COLUMN variants VARCHAR(300)")
+    conn.commit()
+    conn.close()
+
+
 def migrate_fix_contributor_attribution(app):
     """Restore correct contributor attribution on the community-suggested terms.
 
@@ -520,6 +547,7 @@ def create_app(config_overrides=None):
         migrate_add_suggestion_resolved(app)
         migrate_add_validation_status(app)
         migrate_add_shown_rw(app)
+        migrate_add_variants(app)
         migrate_fix_contributor_attribution(app)
 
         from seed_data import STARTER_TERMS, ADMIN_USERNAME, ADMIN_PASSWORD
@@ -604,7 +632,8 @@ def create_app(config_overrides=None):
         results = Term.query.filter(
             db.or_(
                 Term.english.ilike(f"%{query}%"),
-                Term.kinyarwanda.ilike(f"%{query}%")
+                Term.kinyarwanda.ilike(f"%{query}%"),
+                Term.variants.ilike(f"%{query}%")
             )
         ).all()
         # Log the API search
@@ -753,6 +782,16 @@ def create_app(config_overrides=None):
               "success")
         return redirect(url_for("admin_dashboard"))
 
+    def _clean_variants(raw):
+        """Normalise the typed variants field to 'A / B / C', or None.
+
+        Empty pieces are dropped and separators are regularised, so the stored
+        string is predictable for search and for the freeze artifact.
+        """
+        parts = [p.strip() for p in (raw or "").split("/")]
+        parts = [p for p in parts if p]
+        return " / ".join(parts) or None
+
     @app.route("/admin/add", methods=["GET", "POST"])
     @admin_required
     def admin_add_term():
@@ -760,6 +799,7 @@ def create_app(config_overrides=None):
             term = Term(
                 english=request.form.get("english", "").strip(),
                 kinyarwanda=request.form.get("kinyarwanda", "").strip(),
+                variants=_clean_variants(request.form.get("variants", "")),
                 example_en=request.form.get("example_en", "").strip() or None,
                 example_rw=request.form.get("example_rw", "").strip() or None,
                 etymology=request.form.get("etymology", "").strip() or None,
@@ -779,6 +819,7 @@ def create_app(config_overrides=None):
         if request.method == "POST":
             term.english = request.form.get("english", "").strip()
             term.kinyarwanda = request.form.get("kinyarwanda", "").strip()
+            term.variants = _clean_variants(request.form.get("variants", ""))
             term.example_en = request.form.get("example_en", "").strip() or None
             term.example_rw = request.form.get("example_rw", "").strip() or None
             term.etymology = request.form.get("etymology", "").strip() or None

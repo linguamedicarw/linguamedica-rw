@@ -97,9 +97,9 @@ You are not scoring conversation. You are scoring a dictionary headword standing
 
 *Igifu* is the stomach, the organ. *Inda* is the belly or abdomen, the region. *Inda ibyara* is the reproductive sense. *Ikiziba cy'inda* is the reproductive tract itself, the canal through the cervix and uterus. Kinyarwanda encodes this ladder from region to organ; everyday speech often flattens it to *inda*. When a rendering names a body site, check that it sits on the right rung for the English term. A rendering one rung too general is usually a 2. A rendering on the wrong ladder entirely is a 1.
 
-## Entries that list several forms
+## One rendering per term
 
-Many entries list variants separated by slashes, for example *Impozamarira / Inshumbusho / Igihembo*. Score the set as it is presented, because that is what a user of the dictionary sees. If one variant is weaker than the others, say which in the comment field. Do not score only the first form, and do not pick the strongest one and score that.
+Every term shows you exactly one Kinyarwanda rendering, and that single rendering is what you score. Some entries also record other forms that a reader might search for, but those are kept separately and are never put in front of you, so you never have to decide how to weigh a set of forms against each other. If you know a form that serves the term better than the one shown, or as well, put it in the alternative rendering field and tell me why in the comment. That is more useful to the project than a compromise score.
 
 ## Using the scoring page
 

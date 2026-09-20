@@ -37,6 +37,13 @@ class Term(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     english = db.Column(db.String(200), nullable=False, index=True)
     kinyarwanda = db.Column(db.String(200), nullable=False)
+
+    # Other Kinyarwanda forms a reader might look up, separated by " / ".
+    # Recorded and searchable, but never the string a reviewer scores: the
+    # scored rendering is always `kinyarwanda` on its own, so one adequacy
+    # judgment means the same thing on every row of the corpus.
+    variants = db.Column(db.String(300), nullable=True)
+
     example_en = db.Column(db.Text, nullable=True)       # Example sentence in English
     example_rw = db.Column(db.Text, nullable=True)        # Example sentence in Kinyarwanda
     etymology = db.Column(db.Text, nullable=True)         # Why this translation makes sense
@@ -68,6 +75,7 @@ class Term(db.Model):
             "id": self.id,
             "english": self.english,
             "kinyarwanda": self.kinyarwanda,
+            "variants": self.variants,
             "example_en": self.example_en,
             "example_rw": self.example_rw,
             "etymology": self.etymology,
