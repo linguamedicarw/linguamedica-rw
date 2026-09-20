@@ -106,7 +106,7 @@ def _add_term(admin_client, **over):
     data = {
         "english": "Infertility test term",
         "kinyarwanda": "Kutabyara",
-        "variants": "Ubugumba",
+        "variants_rw": "Ubugumba",
         "category": "Reproductive Health",
     }
     data.update(over)
@@ -119,16 +119,16 @@ def test_admin_can_store_variants(admin_client, app):
     with app.app_context():
         term = Term.query.filter_by(english="Infertility test term").first()
         assert term.kinyarwanda == "Kutabyara"
-        assert term.variants == "Ubugumba"
+        assert term.variants_rw == "Ubugumba"
 
 
 def test_variants_are_normalised_and_blank_becomes_none(admin_client, app):
     from models import Term
-    _add_term(admin_client, english="Messy variants", variants="  A /  / B  /C/ ")
-    _add_term(admin_client, english="No variants", variants="   ")
+    _add_term(admin_client, english="Messy variants", variants_rw="  A /  / B  /C/ ")
+    _add_term(admin_client, english="No variants", variants_rw="   ")
     with app.app_context():
-        assert Term.query.filter_by(english="Messy variants").first().variants == "A / B / C"
-        assert Term.query.filter_by(english="No variants").first().variants is None
+        assert Term.query.filter_by(english="Messy variants").first().variants_rw == "A / B / C"
+        assert Term.query.filter_by(english="No variants").first().variants_rw is None
 
 
 def test_search_finds_a_term_by_its_variant(admin_client, client):
@@ -157,23 +157,23 @@ def test_editing_a_term_can_clear_its_variants(admin_client, app):
     admin_client.post(f"/admin/edit/{term_id}", data={
         "english": "Infertility test term",
         "kinyarwanda": "Kutabyara",
-        "variants": "",
+        "variants_rw": "",
     }, follow_redirects=True)
     with app.app_context():
-        assert db.session.get(Term, term_id).variants is None
+        assert db.session.get(Term, term_id).variants_rw is None
 
 
 def test_variants_migration_adds_the_column_to_an_older_sqlite_database(tmp_path):
-    """A database created before `variants` existed gains it at boot, rows intact."""
+    """A database created before the variant columns existed gains it at boot, rows intact."""
     import sqlite3
-    from app import create_app, migrate_add_variants
+    from app import create_app, migrate_add_variant_columns
     from models import db, Term
 
     db_path = tmp_path / "old.db"
     # Build the schema as it stood before this change: every column except
-    # `variants`, which is what an existing deployment actually looks like.
+    # the variant columns, which is what an existing deployment looks like.
     pre_variants = [
-        c for c in Term.__table__.columns if c.name != "variants"
+        c for c in Term.__table__.columns if c.name != "variants_rw"
     ]
     cols = ", ".join(
         f"{c.name} {'INTEGER PRIMARY KEY' if c.primary_key else 'TEXT'}"
@@ -195,15 +195,16 @@ def test_variants_migration_adds_the_column_to_an_older_sqlite_database(tmp_path
         "RATELIMIT_ENABLED": False,
     })
     with application.app_context():
-        migrate_add_variants(application)
+        migrate_add_variant_columns(application)
         present = {r[1] for r in sqlite3.connect(db_path).execute("PRAGMA table_info(terms)")}
-        assert "variants" in present
+        assert "variants_rw" in present
         anemia = Term.query.filter_by(english="Anemia").first()
         assert anemia is not None
         assert anemia.kinyarwanda == "Kubura amaraso"
-        assert anemia.variants is None
+        assert anemia.variants_rw is None
+        assert anemia.variants_en is None
         # Idempotent: a second boot must not raise.
-        migrate_add_variants(application)
+        migrate_add_variant_columns(application)
 
 
 def test_edit_form_never_shows_the_word_none_for_an_empty_field(admin_client, app):
@@ -224,11 +225,108 @@ def test_edit_form_never_shows_the_word_none_for_an_empty_field(admin_client, ap
     # And a round-trip through the form leaves the empty fields empty.
     admin_client.post(f"/admin/edit/{term_id}", data={
         "english": "Bare term", "kinyarwanda": "Ijambo",
-        "variants": "", "category": "", "source": "",
+        "variants_rw": "", "category": "", "source": "",
         "example_en": "", "example_rw": "", "etymology": "",
     }, follow_redirects=True)
     with app.app_context():
         term = db.session.get(Term, term_id)
-        for field in ("variants", "category", "source",
+        for field in ("variants_rw", "category", "source",
                       "example_en", "example_rw", "etymology"):
             assert getattr(term, field) is None, field
+
+
+# ---------------------------------------------------------------------------
+# Compound entries — one English headword, one Kinyarwanda rendering
+# ---------------------------------------------------------------------------
+def test_no_seeded_entry_carries_a_compound_headword_or_rendering(app):
+    """The stimulus a reviewer sees must be one term and one rendering."""
+    from models import Term
+    with app.app_context():
+        compound_en = {t.english for t in Term.query.all() if "/" in t.english}
+        compound_rw = {t.english for t in Term.query.all() if "/" in t.kinyarwanda}
+    assert compound_en == set(), compound_en
+    assert compound_rw == set(), compound_rw
+
+
+def test_the_recorded_decisions_are_applied_to_the_seeded_corpus(app):
+    from models import Term
+    expected = {
+        "Diabetes": ("Diyabete", "Indwara y'igisukari"),
+        "Headache": ("Kubabara umutwe", "Kuribwa n'umutwe / Kuribwa umutwe"),
+        "Traditional medicine": ("Ubuvuzi gakondo",
+                                 "Ubuvuzi bukoresha imiti gakondo / Imiti ikomoka ku bimera"),
+        "Infertility": ("Kutabyara", "Ubugumba"),
+        "Epilepsy": ("Igicuri", "Indwara y'igicuri"),
+    }
+    with app.app_context():
+        for english, (rw, variants) in expected.items():
+            term = Term.query.filter_by(english=english).first()
+            assert term is not None, english
+            assert term.kinyarwanda == rw, english
+            assert term.variants_rw == variants, english
+        # English synonyms survive as searchable alternatives
+        assert Term.query.filter_by(english="Doctor").first().variants_en == "Physician"
+        assert Term.query.filter_by(english="Traditional medicine").first().variants_en == "Herbal remedies"
+
+
+def test_search_finds_an_entry_by_its_english_synonym(client):
+    r = client.get("/api/search?q=physician")
+    assert r.status_code == 200
+    assert any(t["english"] == "Doctor" for t in r.get_json())
+
+
+def test_compound_migration_leaves_an_edited_rendering_alone(app):
+    """If the Kinyarwanda was changed since the decision, keep the change but
+    still resolve the English, so the seed cannot re-insert a duplicate."""
+    from app import migrate_split_compound_entries
+    from models import Term, db
+    with app.app_context():
+        term = Term(english="Healthcare assistance / Medical support",
+                    kinyarwanda="Something Khris edited later")
+        db.session.add(term)
+        db.session.commit()
+        migrate_split_compound_entries(app)
+        moved = Term.query.filter_by(english="Healthcare assistance").all()
+        edited = [t for t in moved if t.kinyarwanda == "Something Khris edited later"]
+        assert len(edited) == 1
+        assert edited[0].variants_en == "Medical support"
+        assert Term.query.filter_by(
+            english="Healthcare assistance / Medical support").first() is None
+
+
+def test_compound_migration_is_idempotent(app):
+    from app import migrate_split_compound_entries
+    from models import Term
+    with app.app_context():
+        before = Term.query.filter_by(english="Diabetes").first()
+        snapshot = (before.kinyarwanda, before.variants_rw)
+        migrate_split_compound_entries(app)
+        migrate_split_compound_entries(app)
+        after = Term.query.filter_by(english="Diabetes").first()
+        assert (after.kinyarwanda, after.variants_rw) == snapshot
+
+
+def test_two_concept_entry_becomes_two_entries(app):
+    """Miscarriage and abortion are different events and need separate rows."""
+    from models import Term
+    with app.app_context():
+        assert Term.query.filter_by(english="Miscarriage/abortion").first() is None
+        abortion = Term.query.filter_by(english="Abortion").first()
+        miscarriage = Term.query.filter_by(english="Miscarriage").first()
+        assert abortion is not None and miscarriage is not None
+        assert abortion.kinyarwanda == "Gukuramo inda"
+        assert miscarriage.kinyarwanda == "Inda yavuyemo"
+        # Credit follows the rendering: hers stays hers, his is his.
+        assert abortion.contributed_by == "Yvette Nkurunziza"
+        assert miscarriage.contributed_by == "Christophe Mumaragishyika"
+        assert "Yvette Nkurunziza" in miscarriage.source
+
+
+def test_two_concept_split_is_idempotent_and_makes_no_duplicate(app):
+    from app import migrate_split_two_concept_entries
+    from models import Term
+    with app.app_context():
+        migrate_split_two_concept_entries(app)
+        migrate_split_two_concept_entries(app)
+        assert Term.query.filter_by(english="Miscarriage").count() == 1
+        assert Term.query.filter_by(english="Abortion").count() == 1

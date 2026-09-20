@@ -42,7 +42,13 @@ class Term(db.Model):
     # Recorded and searchable, but never the string a reviewer scores: the
     # scored rendering is always `kinyarwanda` on its own, so one adequacy
     # judgment means the same thing on every row of the corpus.
-    variants = db.Column(db.String(300), nullable=True)
+    variants_rw = db.Column(db.String(300), nullable=True)
+
+    # Other English names for the same concept, separated by " / ". The
+    # headword in `english` is the single term a reviewer is shown; these are
+    # searchable synonyms, so one compound headword never asks a reviewer to
+    # hold two concepts at once.
+    variants_en = db.Column(db.String(300), nullable=True)
 
     example_en = db.Column(db.Text, nullable=True)       # Example sentence in English
     example_rw = db.Column(db.Text, nullable=True)        # Example sentence in Kinyarwanda
@@ -75,7 +81,8 @@ class Term(db.Model):
             "id": self.id,
             "english": self.english,
             "kinyarwanda": self.kinyarwanda,
-            "variants": self.variants,
+            "variants_rw": self.variants_rw,
+            "variants_en": self.variants_en,
             "example_en": self.example_en,
             "example_rw": self.example_rw,
             "etymology": self.etymology,

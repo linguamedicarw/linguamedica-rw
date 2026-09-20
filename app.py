@@ -144,18 +144,21 @@ CONTRIBUTOR_CORRECTIONS = {
 }
 
 
-def migrate_add_variants(app):
-    """Add terms.variants if it doesn't exist.
+def migrate_add_variant_columns(app):
+    """Add terms.variants_rw and terms.variants_en if they don't exist.
 
-    Holds alternative Kinyarwanda forms for the same entry, separated by
-    " / ". They are searchable but never scored: reviewers always see the
-    single canonical rendering in `kinyarwanda`, so an adequacy score means
-    the same thing on every row. Idempotent and safe on every startup.
+    Both hold alternative forms for the same entry, separated by " / ":
+    other Kinyarwanda renderings, and other English names. They are
+    searchable but never part of the stimulus, so a reviewer always sees one
+    English headword and one Kinyarwanda rendering and an adequacy score
+    means the same thing on every row of the corpus. Idempotent and safe on
+    every startup.
     """
     db_uri = app.config['SQLALCHEMY_DATABASE_URI']
     if db_uri.startswith('postgresql'):
         _pg_add_columns_if_missing("terms", [
-            ("variants", "VARCHAR(300)"),
+            ("variants_rw", "VARCHAR(300)"),
+            ("variants_en", "VARCHAR(300)"),
         ])
         return
     if not db_uri.startswith('sqlite'):
@@ -165,10 +168,217 @@ def migrate_add_variants(app):
     cursor = conn.cursor()
     cursor.execute("PRAGMA table_info(terms)")
     existing = {row[1] for row in cursor.fetchall()}
-    if 'variants' not in existing:
-        cursor.execute("ALTER TABLE terms ADD COLUMN variants VARCHAR(300)")
+    if 'variants_rw' not in existing:
+        cursor.execute("ALTER TABLE terms ADD COLUMN variants_rw VARCHAR(300)")
+    if 'variants_en' not in existing:
+        cursor.execute("ALTER TABLE terms ADD COLUMN variants_en VARCHAR(300)")
     conn.commit()
     conn.close()
+
+
+# Compound entries split into a single headword plus searchable variants.
+# Every choice below is Khris's, made on 19 September 2026 against the rule
+# recorded with the corpus: keep the rendering that carries the concept most
+# concretely for a native speaker; where two are equally concrete, keep the
+# shorter; length is the tiebreaker, never the test.
+#
+# Keyed by the entry's English string BEFORE the fix. `expect_rw` guards each
+# row: if the Kinyarwanda no longer matches, the entry has been edited since
+# and the migration leaves it alone rather than overwriting a later decision.
+COMPOUND_ENTRY_FIXES = {
+    # --- one Kinyarwanda rendering chosen, the rest kept as variants ---
+    "Diabetes": {
+        "expect_rw": "Diyabete / Indwara y'igisukari",
+        "kinyarwanda": "Diyabete", "variants_rw": "Indwara y'igisukari"},
+    "Pregnancy": {
+        "expect_rw": "Gutwita / Inda",
+        "kinyarwanda": "Gutwita", "variants_rw": "Inda"},
+    "Asthma": {
+        "expect_rw": "Gusemeka / Isemeka",
+        "kinyarwanda": "Gusemeka", "variants_rw": "Isemeka"},
+    "Compensation": {
+        "expect_rw": "Impozamarira / Inshumbusho / Igihembo",
+        "kinyarwanda": "Impozamarira", "variants_rw": "Inshumbusho / Igihembo"},
+    "Barriers to care": {
+        "expect_rw": "Imbogamizi zibangamira kwitabwaho / Imbogamizi zibuza kuvurwa",
+        "kinyarwanda": "Imbogamizi zibuza kuvurwa",
+        "variants_rw": "Imbogamizi zibangamira kwitabwaho"},
+    "Headache": {
+        "expect_rw": "Kuribwa n'umutwe / Kuribwa umutwe / Kubabara umutwe",
+        "kinyarwanda": "Kubabara umutwe",
+        "variants_rw": "Kuribwa n'umutwe / Kuribwa umutwe"},
+    "Swelling": {
+        "expect_rw": "Kubyimba / Kubyimbagatana",
+        "kinyarwanda": "Kubyimba", "variants_rw": "Kubyimbagatana"},
+    "Palliative care": {
+        "expect_rw": "Ubuvuzi mpozaburibwe / Ubufasha nyunganiramibereho",
+        "kinyarwanda": "Ubufasha nyunganiramibereho",
+        "variants_rw": "Ubuvuzi mpozaburibwe"},
+
+    "Shortness of breath": {
+        "expect_rw": "Guhera umwuka / Kubura umwuka",
+        "kinyarwanda": "Guhera umwuka", "variants_rw": "Kubura umwuka"},
+
+    # --- a variant added to an entry that was already single ---
+    "Infertility": {
+        "expect_rw": "Kutabyara", "variants_rw": "Ubugumba"},
+    "Epilepsy": {
+        "expect_rw": "Igicuri", "variants_rw": "Indwara y'igicuri"},
+
+    # --- one English headword chosen, the other kept as a searchable synonym ---
+    "Health behavior / Lifestyle conduct": {
+        "english": "Health behavior", "variants_en": "Lifestyle conduct"},
+    "Clinical instructions / Doctor's recommendations": {
+        "english": "Clinical instructions", "variants_en": "Doctor's recommendations"},
+    "Health advice / Medical counseling": {
+        "english": "Health advice", "variants_en": "Medical counseling"},
+    "Information dissemination / Health sensitization": {
+        "english": "Information dissemination", "variants_en": "Health sensitization"},
+    "Health follow-up / Medical monitoring": {
+        "english": "Health follow-up", "variants_en": "Medical monitoring"},
+    "Doctor / Physician": {
+        "english": "Doctor", "variants_en": "Physician"},
+    "Division / Department": {
+        "english": "Division", "variants_en": "Department"},
+    "To fight/combat a disease": {
+        "english": "To fight a disease", "variants_en": "To combat a disease"},
+    "Partners in Health / Inshuti Mu Buzima (PIH/IMB)": {
+        "english": "Partners in Health (PIH)",
+        "variants_en": "Inshuti Mu Buzima (IMB)"},
+
+    # --- compound on both sides, resolved to one entry on each ---
+    "Healthcare assistance / Medical support": {
+        "expect_rw": "Ubwunganizi bwita ku buzima / Ubwunganizi mu kuvurwa",
+        "english": "Healthcare assistance", "variants_en": "Medical support",
+        "kinyarwanda": "Ubwunganizi mu kuvurwa",
+        "variants_rw": "Ubwunganizi bwita ku buzima"},
+    # Sandrine's accepted conciseness suggestion lands here too: the canonical
+    # rendering becomes the shorter form, and the longer one it replaces is
+    # kept as a variant rather than lost.
+    "Herbal remedies / Traditional medicine": {
+        "expect_rw": "Imiti ikomoka ku bimera / Ubuvuzi bukoresha imiti gakondo",
+        "english": "Traditional medicine", "variants_en": "Herbal remedies",
+        "kinyarwanda": "Ubuvuzi gakondo",
+        "variants_rw": "Ubuvuzi bukoresha imiti gakondo / Imiti ikomoka ku bimera"},
+}
+
+
+def migrate_split_compound_entries(app):
+    """Resolve compound entries into one headword plus searchable variants.
+
+    Each entry is matched on its pre-fix English string and, where given, on
+    its exact Kinyarwanda. A row that no longer matches has been edited since
+    these decisions were made, so it is skipped and reported rather than
+    overwritten. Idempotent: once an entry is fixed its English no longer
+    matches the key, so later boots do nothing.
+    """
+    try:
+        changed, skipped = 0, []
+        for key, fix in COMPOUND_ENTRY_FIXES.items():
+            term = Term.query.filter_by(english=key).first()
+            if term is None:
+                continue
+            # Already in the intended state: nothing to do, and nothing to
+            # report. Entries whose English headword does not change keep
+            # matching this key forever, so without this check every later
+            # boot would re-apply the same values and warn about a guard
+            # mismatch that is really just the finished result.
+            wanted = {f: fix[f] for f in
+                      ("english", "kinyarwanda", "variants_rw", "variants_en")
+                      if f in fix}
+            if all(getattr(term, f) == v for f, v in wanted.items()):
+                continue
+
+            # The Kinyarwanda guard is advisory, and deliberately does not
+            # abort the whole row. If the rendering has been edited since
+            # these decisions were made, that edit is kept and only the
+            # English side is resolved. Skipping the English rename instead
+            # would leave a compound headword in the database that the seed
+            # then re-inserts under its new name, creating a duplicate.
+            expect_rw = fix.get("expect_rw")
+            rw_is_untouched = expect_rw is None or term.kinyarwanda == expect_rw
+            if not rw_is_untouched:
+                skipped.append(key)
+            fields = ["english", "variants_en"]
+            if rw_is_untouched:
+                fields += ["kinyarwanda", "variants_rw"]
+            for field in fields:
+                if field in fix:
+                    setattr(term, field, fix[field])
+            changed += 1
+        if changed:
+            db.session.commit()
+            print(f"[migrate] resolved {changed} compound entr(ies) into headword plus variants")
+        for key in skipped:
+            print(f"[migrate] '{key}': Kinyarwanda edited since the decision "
+                  f"was recorded, so its rendering was left as it is")
+    except Exception as exc:
+        db.session.rollback()
+        print(f"[migrate] compound entry split skipped: {exc}")
+
+
+
+# One entry that was two concepts sharing a row. Khris separated them on
+# 19 September 2026: *gukuramo* is to remove, *kuvamo* is to exit or leave, so
+# one names a pregnancy deliberately ended and the other one that ended of
+# itself. Conflating them is a clinically consequential error in a dictionary
+# meant to ground a translation system, so they become two entries.
+#
+# The rendering Yvette Nkurunziza originally submitted stays with her under the
+# entry it actually names. The second rendering is Khris's own, so it is
+# credited to him with her entry named in its provenance.
+SPLIT_ETYMOLOGY = (
+    "'Gukuramo' = to remove; 'kuvamo' = to exit or leave. Both describe a "
+    "pregnancy that has ended, but 'gukuramo inda' names one deliberately "
+    "ended, while 'inda yavuyemo' names one that ended of itself."
+)
+COMPOUND_ENTRY_SPLITS = {
+    "Miscarriage/abortion": {
+        "expect_rw": "Gukuramo inda",
+        "keep": {"english": "Abortion", "etymology": SPLIT_ETYMOLOGY},
+        "create": {
+            "english": "Miscarriage",
+            "kinyarwanda": "Inda yavuyemo",
+            "etymology": SPLIT_ETYMOLOGY,
+            "category": "Reproductive Health",
+            "contributed_by": "Christophe Mumaragishyika",
+            "source": ("Separated from Yvette Nkurunziza's 'Miscarriage/abortion' "
+                       "entry, editor's rendering, September 2026"),
+        },
+    },
+}
+
+
+def migrate_split_two_concept_entries(app):
+    """Separate an entry that was carrying two distinct concepts into two.
+
+    The surviving row keeps its id, provenance and review history; the second
+    concept becomes a new entry. Guarded twice: the original must still hold
+    the expected rendering, and the new headword is only created if nothing
+    already uses it. Idempotent on every startup.
+    """
+    try:
+        made = 0
+        for key, plan in COMPOUND_ENTRY_SPLITS.items():
+            term = Term.query.filter_by(english=key).first()
+            if term is None:
+                continue
+            if term.kinyarwanda != plan["expect_rw"]:
+                print(f"[migrate] '{key}': rendering edited since the decision, "
+                      f"split skipped")
+                continue
+            new_english = plan["create"]["english"]
+            if Term.query.filter_by(english=new_english).first() is None:
+                db.session.add(Term(**plan["create"]))
+                made += 1
+            for field, value in plan["keep"].items():
+                setattr(term, field, value)
+        db.session.commit()
+        if made:
+            print(f"[migrate] separated {made} two-concept entr(ies) into their own rows")
+    except Exception as exc:
+        db.session.rollback()
+        print(f"[migrate] two-concept split skipped: {exc}")
 
 
 def migrate_fix_contributor_attribution(app):
@@ -547,7 +757,9 @@ def create_app(config_overrides=None):
         migrate_add_suggestion_resolved(app)
         migrate_add_validation_status(app)
         migrate_add_shown_rw(app)
-        migrate_add_variants(app)
+        migrate_add_variant_columns(app)
+        migrate_split_compound_entries(app)
+        migrate_split_two_concept_entries(app)
         migrate_fix_contributor_attribution(app)
 
         from seed_data import STARTER_TERMS, ADMIN_USERNAME, ADMIN_PASSWORD
@@ -633,7 +845,8 @@ def create_app(config_overrides=None):
             db.or_(
                 Term.english.ilike(f"%{query}%"),
                 Term.kinyarwanda.ilike(f"%{query}%"),
-                Term.variants.ilike(f"%{query}%")
+                Term.variants_rw.ilike(f"%{query}%"),
+                Term.variants_en.ilike(f"%{query}%")
             )
         ).all()
         # Log the API search
@@ -799,7 +1012,8 @@ def create_app(config_overrides=None):
             term = Term(
                 english=request.form.get("english", "").strip(),
                 kinyarwanda=request.form.get("kinyarwanda", "").strip(),
-                variants=_clean_variants(request.form.get("variants", "")),
+                variants_rw=_clean_variants(request.form.get("variants_rw", "")),
+                variants_en=_clean_variants(request.form.get("variants_en", "")),
                 example_en=request.form.get("example_en", "").strip() or None,
                 example_rw=request.form.get("example_rw", "").strip() or None,
                 etymology=request.form.get("etymology", "").strip() or None,
@@ -819,7 +1033,8 @@ def create_app(config_overrides=None):
         if request.method == "POST":
             term.english = request.form.get("english", "").strip()
             term.kinyarwanda = request.form.get("kinyarwanda", "").strip()
-            term.variants = _clean_variants(request.form.get("variants", ""))
+            term.variants_rw = _clean_variants(request.form.get("variants_rw", ""))
+            term.variants_en = _clean_variants(request.form.get("variants_en", ""))
             term.example_en = request.form.get("example_en", "").strip() or None
             term.example_rw = request.form.get("example_rw", "").strip() or None
             term.etymology = request.form.get("etymology", "").strip() or None

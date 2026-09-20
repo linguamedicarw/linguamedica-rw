@@ -25,13 +25,23 @@
         </div>
 
         <div class="form-group">
-            <label for="variants">
+            <label for="variants_rw">
                 Other Kinyarwanda forms
                 <span class="label-hint">(optional — separate with " / "; searchable, never shown to reviewers for scoring)</span>
             </label>
-            <input type="text" id="variants" name="variants" class="form-input"
-                   value="{{ (term.variants or '') if editing else '' }}"
+            <input type="text" id="variants_rw" name="variants_rw" class="form-input"
+                   value="{{ (term.variants_rw or '') if editing else '' }}"
                    placeholder="e.g., Ubugumba">
+        </div>
+
+        <div class="form-group">
+            <label for="variants_en">
+                Other English names
+                <span class="label-hint">(optional — separate with " / "; searchable, never shown to reviewers)</span>
+            </label>
+            <input type="text" id="variants_en" name="variants_en" class="form-input"
+                   value="{{ (term.variants_en or '') if editing else '' }}"
+                   placeholder="e.g., Physician">
         </div>
 
         <div class="form-group">
