@@ -266,7 +266,10 @@ def test_the_recorded_decisions_are_applied_to_the_seeded_corpus(app):
             assert term.variants_rw == variants, english
         # English synonyms survive as searchable alternatives
         assert Term.query.filter_by(english="Doctor").first().variants_en == "Physician"
-        assert Term.query.filter_by(english="Traditional medicine").first().variants_en == "Herbal remedies"
+        traditional = Term.query.filter_by(english="Traditional medicine").first()
+        assert traditional.variants_en == "Herbal remedies"
+        # The etymology explains the headword rendering, not only the variants.
+        assert "'Ubuvuzi' = treatment" in traditional.etymology
 
 
 def test_search_finds_an_entry_by_its_english_synonym(client):

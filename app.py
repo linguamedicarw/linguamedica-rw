@@ -259,7 +259,11 @@ COMPOUND_ENTRY_FIXES = {
         "expect_rw": "Imiti ikomoka ku bimera / Ubuvuzi bukoresha imiti gakondo",
         "english": "Traditional medicine", "variants_en": "Herbal remedies",
         "kinyarwanda": "Ubuvuzi gakondo",
-        "variants_rw": "Ubuvuzi bukoresha imiti gakondo / Imiti ikomoka ku bimera"},
+        "variants_rw": "Ubuvuzi bukoresha imiti gakondo / Imiti ikomoka ku bimera",
+        # The old etymology explained only the two forms that are now variants,
+        # so it is re-pointed at the headword using the same glosses.
+        "etymology": (
+            "'Ubuvuzi' = treatment. 'Gakondo' = traditional, reflecting that traditional medication was based on herbal remedies. The variants are 'Ubuvuzi bukoresha imiti gakondo' = treatment using traditional medicine, and 'Imiti ikomoka ku bimera' = medicine that comes from plants.")},
 }
 
 
@@ -284,7 +288,8 @@ def migrate_split_compound_entries(app):
             # boot would re-apply the same values and warn about a guard
             # mismatch that is really just the finished result.
             wanted = {f: fix[f] for f in
-                      ("english", "kinyarwanda", "variants_rw", "variants_en")
+                      ("english", "kinyarwanda", "variants_rw",
+                       "variants_en", "etymology")
                       if f in fix}
             if all(getattr(term, f) == v for f, v in wanted.items()):
                 continue
@@ -301,7 +306,7 @@ def migrate_split_compound_entries(app):
                 skipped.append(key)
             fields = ["english", "variants_en"]
             if rw_is_untouched:
-                fields += ["kinyarwanda", "variants_rw"]
+                fields += ["kinyarwanda", "variants_rw", "etymology"]
             for field in fields:
                 if field in fix:
                     setattr(term, field, fix[field])
