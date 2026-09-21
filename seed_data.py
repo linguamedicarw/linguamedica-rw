@@ -90,12 +90,13 @@ STARTER_TERMS = [
     {
         "english": "Anemia",
         "kinyarwanda": "Kubura amaraso",
+        "variants_rw": "Amaraso makeya / Amaraso make",
         "example_en": "Anemia can cause fatigue and weakness.",
         "example_rw": "Kubura amaraso bishobora gutera umunaniro n'intege nke.",
         "etymology": "'Kubura' means 'to lack,' 'amaraso' means 'blood' — literally 'lacking blood.' This descriptive translation immediately communicates the condition to patients.",
         "category": "Hematology",
         "contributed_by": "Christophe Mumaragishyika",
-        "source": "Original starter terms"
+        "source": "Original starter terms; variant 'Amaraso makeya / Amaraso make' added by Yvette Nkurunziza, physician, 21 September 2026"
     },
     {
         "english": "Omphalotomy",
@@ -288,7 +289,7 @@ STARTER_TERMS = [
         "source": "Separated from Yvette Nkurunziza's 'Miscarriage/abortion' entry, editor's rendering, September 2026",
     },
     {"english": 'Infertility', "kinyarwanda": "Kutabyara",
- "variants_rw": "Ubugumba", "example_en": None, "example_rw": None, "etymology": None, "category": 'Reproductive Health', "contributed_by": 'Yvette Nkurunziza', "source": 'Community suggestion — Yvette Nkurunziza (April 2026)'},
+ "variants_rw": "Ubugumba", "example_en": None, "example_rw": None, "etymology": None, "category": 'Reproductive Health', "contributed_by": 'Yvette Nkurunziza', "source": "Community suggestion — Yvette Nkurunziza (April 2026); variant 'Ubugumba' from Virginie Mpuhwezimana, August 2026 collection"},
     {"english": 'Acne', "kinyarwanda": 'Ibiheri', "example_en": None, "example_rw": None, "etymology": None, "category": 'Dermatology', "contributed_by": 'Yvette Nkurunziza', "source": 'Community suggestion — Yvette Nkurunziza (April 2026)'},
     {"english": 'Malnutrition', "kinyarwanda": 'Imirire mibi', "example_en": None, "example_rw": None, "etymology": None, "category": 'Nutrition', "contributed_by": 'Yvette Nkurunziza', "source": 'Community suggestion — Yvette Nkurunziza (April 2026)'},
     {"english": 'Obesity', "kinyarwanda": 'Umubyibuho ukabije', "example_en": None, "example_rw": None, "etymology": None, "category": 'Nutrition', "contributed_by": 'Yvette Nkurunziza', "source": 'Community suggestion — Yvette Nkurunziza (April 2026)'},
@@ -296,7 +297,7 @@ STARTER_TERMS = [
     {"english": 'Cervical cancer', "kinyarwanda": "Kanseri y'inkondo y'umura", "example_en": None, "example_rw": None, "etymology": None, "category": 'Oncology', "contributed_by": 'Yvette Nkurunziza', "source": 'Community suggestion — Yvette Nkurunziza (April 2026)'},
     {"english": 'Breast cancer', "kinyarwanda": "Kanseri y'ibere", "example_en": None, "example_rw": None, "etymology": None, "category": 'Oncology', "contributed_by": 'Yvette Nkurunziza', "source": 'Community suggestion — Yvette Nkurunziza (April 2026)'},
     {"english": 'Epilepsy', "kinyarwanda": "Igicuri",
- "variants_rw": "Indwara y'igicuri", "example_en": None, "example_rw": None, "etymology": None, "category": 'Neurology', "contributed_by": 'Yvette Nkurunziza', "source": 'Community suggestion — Yvette Nkurunziza (April 2026)'},
+ "variants_rw": "Indwara y'igicuri", "example_en": None, "example_rw": None, "etymology": None, "category": 'Neurology', "contributed_by": 'Yvette Nkurunziza', "source": "Community suggestion — Yvette Nkurunziza (April 2026); variant 'Indwara y'igicuri' from Sarah Izabayo, August 2026 collection"},
     {"english": 'Measles', "kinyarwanda": 'Iseru', "example_en": None, "example_rw": None, "etymology": None, "category": 'Infectious Disease', "contributed_by": 'Yvette Nkurunziza', "source": 'Community suggestion — Yvette Nkurunziza (April 2026)'},
     {"english": 'Cholera', "kinyarwanda": 'Korera', "example_en": None, "example_rw": None, "etymology": None, "category": 'Infectious Disease', "contributed_by": 'Yvette Nkurunziza', "source": 'Community suggestion — Yvette Nkurunziza (April 2026)'},
     {"english": 'Ascites', "kinyarwanda": 'Urushwima', "example_en": None, "example_rw": None, "etymology": None, "category": 'Gastroenterology', "contributed_by": 'Yvette Nkurunziza', "source": 'Community suggestion — Yvette Nkurunziza (April 2026)'},
@@ -305,6 +306,17 @@ STARTER_TERMS = [
     {"english": 'HIV', "kinyarwanda": 'Agakoko gatera SIDA', "example_en": None, "example_rw": None, "etymology": "'Agakoko gatera SIDA' = the microbe that causes AIDS. Older, French-speaking generations call it 'VIH', a trace of the Belgian-era French influence before Rwanda's shift toward English.", "category": 'Infectious Disease', "contributed_by": 'Yvette Nkurunziza', "source": 'Community suggestion — Yvette Nkurunziza (April 2026)'},
     {"english": 'Cancer', "kinyarwanda": 'Kanseri', "example_en": None, "example_rw": None, "etymology": "'Kanseri' is the borrowed international term in common clinical use. The older descriptive root is 'ikimungu', from 'kumunga' (to erode or eat away slowly), reflecting what a tumour does to healthy cells. Same root used in the Brain cancer entry.", "category": 'Oncology', "contributed_by": 'Yvette Nkurunziza', "source": 'Community suggestion — Yvette Nkurunziza (April 2026)'},
     {"english": 'Convulse', "kinyarwanda": 'Kugagara', "example_en": None, "example_rw": None, "etymology": None, "category": 'Neurology', "contributed_by": 'Cara Nkurunziza', "source": 'Community suggestion — Cara Nkurunziza (UGHE student)'},
+    {
+        "english": "Stomach ache",
+        "kinyarwanda": "Kubabara mu gifu",
+        "variants_rw": "Kurwara igifu / Kubabara mu kameme",
+        "example_en": None,
+        "example_rw": None,
+        "etymology": None,
+        "category": "Symptoms",
+        "contributed_by": "Christophe Mumaragishyika",
+        "source": "Reviewer guideline anchor; variant 'Kubabara mu kameme' added by Yvette Nkurunziza, physician, 21 September 2026",
+    },
 ]
 
 

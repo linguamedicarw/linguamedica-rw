@@ -220,10 +220,25 @@ COMPOUND_ENTRY_FIXES = {
         "kinyarwanda": "Guhera umwuka", "variants_rw": "Kubura umwuka"},
 
     # --- a variant added to an entry that was already single ---
+    # Credit follows the rendering: each variant names the person who gave it.
     "Infertility": {
-        "expect_rw": "Kutabyara", "variants_rw": "Ubugumba"},
+        "expect_rw": "Kutabyara", "variants_rw": "Ubugumba",
+        "source": ("Community suggestion — Yvette Nkurunziza (April 2026); "
+                   "variant 'Ubugumba' from Virginie Mpuhwezimana, "
+                   "August 2026 collection")},
     "Epilepsy": {
-        "expect_rw": "Igicuri", "variants_rw": "Indwara y'igicuri"},
+        "expect_rw": "Igicuri", "variants_rw": "Indwara y'igicuri",
+        "source": ("Community suggestion — Yvette Nkurunziza (April 2026); "
+                   "variant 'Indwara y'igicuri' from Sarah Izabayo, "
+                   "August 2026 collection")},
+    # Added during the reviewer demo of 21 September 2026. The headword stays
+    # as it was; Yvette contributed a further form clinicians use.
+    "Anemia": {
+        "expect_rw": "Kubura amaraso",
+        "variants_rw": "Amaraso makeya / Amaraso make",
+        "source": ("Original starter terms; variant 'Amaraso makeya / "
+                   "Amaraso make' added by Yvette Nkurunziza, physician, "
+                   "21 September 2026")},
 
     # --- one English headword chosen, the other kept as a searchable synonym ---
     "Health behavior / Lifestyle conduct": {
@@ -289,7 +304,7 @@ def migrate_split_compound_entries(app):
             # mismatch that is really just the finished result.
             wanted = {f: fix[f] for f in
                       ("english", "kinyarwanda", "variants_rw",
-                       "variants_en", "etymology")
+                       "variants_en", "etymology", "source")
                       if f in fix}
             if all(getattr(term, f) == v for f, v in wanted.items()):
                 continue
@@ -306,14 +321,14 @@ def migrate_split_compound_entries(app):
                 skipped.append(key)
             fields = ["english", "variants_en"]
             if rw_is_untouched:
-                fields += ["kinyarwanda", "variants_rw", "etymology"]
+                fields += ["kinyarwanda", "variants_rw", "etymology", "source"]
             for field in fields:
                 if field in fix:
                     setattr(term, field, fix[field])
             changed += 1
         if changed:
             db.session.commit()
-            print(f"[migrate] resolved {changed} compound entr(ies) into headword plus variants")
+            print(f"[migrate] applied recorded editorial decisions to {changed} entr(ies)")
         for key in skipped:
             print(f"[migrate] '{key}': Kinyarwanda edited since the decision "
                   f"was recorded, so its rendering was left as it is")

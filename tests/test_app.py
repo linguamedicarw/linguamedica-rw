@@ -183,7 +183,7 @@ def test_variants_migration_adds_the_column_to_an_older_sqlite_database(tmp_path
     conn.execute(f"CREATE TABLE terms ({cols})")
     conn.execute(
         "INSERT INTO terms (english, kinyarwanda, validation_status) "
-        "VALUES ('Anemia', 'Kubura amaraso', 'unreviewed')"
+        "VALUES ('Malaria', 'Malariya', 'unreviewed')"
     )
     conn.commit()
     conn.close()
@@ -198,11 +198,13 @@ def test_variants_migration_adds_the_column_to_an_older_sqlite_database(tmp_path
         migrate_add_variant_columns(application)
         present = {r[1] for r in sqlite3.connect(db_path).execute("PRAGMA table_info(terms)")}
         assert "variants_rw" in present
-        anemia = Term.query.filter_by(english="Anemia").first()
-        assert anemia is not None
-        assert anemia.kinyarwanda == "Kubura amaraso"
-        assert anemia.variants_rw is None
-        assert anemia.variants_en is None
+        # A row no recorded decision touches, so it must come through the
+        # column migration exactly as it went in.
+        malaria = Term.query.filter_by(english="Malaria").first()
+        assert malaria is not None
+        assert malaria.kinyarwanda == "Malariya"
+        assert malaria.variants_rw is None
+        assert malaria.variants_en is None
         # Idempotent: a second boot must not raise.
         migrate_add_variant_columns(application)
 
@@ -333,3 +335,36 @@ def test_two_concept_split_is_idempotent_and_makes_no_duplicate(app):
         migrate_split_two_concept_entries(app)
         assert Term.query.filter_by(english="Miscarriage").count() == 1
         assert Term.query.filter_by(english="Abortion").count() == 1
+
+
+# ---------------------------------------------------------------------------
+# Contributions from the reviewer demo of 21 September 2026
+# ---------------------------------------------------------------------------
+def test_variant_contributors_are_credited_in_source(app):
+    """Credit follows the rendering, so each variant names who gave it."""
+    from models import Term
+    with app.app_context():
+        anemia = Term.query.filter_by(english="Anemia").first()
+        assert anemia.kinyarwanda == "Kubura amaraso"        # headword unchanged
+        assert anemia.variants_rw == "Amaraso makeya / Amaraso make"
+        assert "Yvette Nkurunziza" in anemia.source
+        assert "Virginie Mpuhwezimana" in Term.query.filter_by(english="Infertility").first().source
+        assert "Sarah Izabayo" in Term.query.filter_by(english="Epilepsy").first().source
+
+
+def test_stomach_ache_is_in_the_dictionary_but_never_scored(app):
+    """It is a guideline anchor: present for readers, excluded from every queue."""
+    from app import REVIEW_EXCLUDED_TERMS
+    from models import Term
+    with app.app_context():
+        term = Term.query.filter_by(english="Stomach ache").first()
+        assert term is not None
+        assert term.kinyarwanda == "Kubabara mu gifu"
+        assert "Kubabara mu kameme" in term.variants_rw
+        assert "Yvette Nkurunziza" in term.source
+    assert "Stomach ache" in REVIEW_EXCLUDED_TERMS
+
+
+def test_search_finds_anemia_by_the_form_a_clinician_uses(client):
+    r = client.get("/api/search?q=makeya")
+    assert any(t["english"] == "Anemia" for t in r.get_json())
