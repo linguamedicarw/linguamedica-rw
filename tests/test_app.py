@@ -368,3 +368,43 @@ def test_stomach_ache_is_in_the_dictionary_but_never_scored(app):
 def test_search_finds_anemia_by_the_form_a_clinician_uses(client):
     r = client.get("/api/search?q=makeya")
     assert any(t["english"] == "Anemia" for t in r.get_json())
+
+
+# ---------------------------------------------------------------------------
+# Show / hide password toggle
+# ---------------------------------------------------------------------------
+TOGGLE_SCRIPT = b"js/password-toggle.js"
+
+
+def test_every_page_with_a_password_field_loads_the_toggle(app, admin_client):
+    # admin_client shares its session with `client`, so the logged-out pages
+    # need a client of their own or they redirect to the dashboard.
+    anonymous = app.test_client()
+    assert TOGGLE_SCRIPT in anonymous.get("/review/login").data
+    assert TOGGLE_SCRIPT in anonymous.get("/admin/login").data
+    assert TOGGLE_SCRIPT in admin_client.get("/admin").data
+
+
+def test_password_fields_are_hidden_without_javascript(app, admin_client):
+    """The toggle only enhances; the server still sends real password fields,
+    so a browser without JavaScript never shows a password in the clear."""
+    anonymous = app.test_client()
+    assert b'type="password" id="password"' in anonymous.get("/review/login").data
+    assert b'type="password" id="password"' in anonymous.get("/admin/login").data
+    # the reset boxes only render once a reviewer account exists
+    from models import Reviewer, db
+    with app.app_context():
+        r = Reviewer(code="OU", username="olive", display_name="Olive Umuhoza")
+        r.set_password("long-enough-password")
+        db.session.add(r)
+        db.session.commit()
+    assert b'type="password" id="pw-' in admin_client.get("/admin").data
+
+
+def test_toggle_script_is_served(client):
+    r = client.get("/static/js/password-toggle.js")
+    assert r.status_code == 200
+    body = r.get_data(as_text=True)
+    # it must never become a submit button, and it must re-hide on submit
+    assert 'button.type = "button"' in body
+    assert "submit" in body
