@@ -408,3 +408,30 @@ def test_toggle_script_is_served(client):
     # it must never become a submit button, and it must re-hide on submit
     assert 'button.type = "button"' in body
     assert "submit" in body
+
+
+# ---------------------------------------------------------------------------
+# Static asset versioning
+# ---------------------------------------------------------------------------
+def test_static_urls_carry_a_content_version(client):
+    import re
+    html = client.get("/review/login").get_data(as_text=True)
+    m = re.search(r'href="/static/css/style\.css\?v=([0-9a-f]{10})"', html)
+    assert m, "stylesheet URL should carry ?v=<hash>"
+    assert re.search(r'src="/static/js/password-toggle\.js\?v=[0-9a-f]{10}"', html)
+    # the versioned URL still serves the file
+    assert client.get(f"/static/css/style.css?v={m.group(1)}").status_code == 200
+
+
+def test_static_version_changes_only_when_the_file_changes(app, tmp_path):
+    from app import static_file_version
+    f = tmp_path / "a.css"
+    f.write_text("body{}")
+    v1 = static_file_version(str(tmp_path), "a.css")
+    assert v1 == static_file_version(str(tmp_path), "a.css")   # stable
+    import os, time
+    f.write_text("body{color:red}")
+    os.utime(f, None)
+    v2 = static_file_version(str(tmp_path), "a.css")
+    assert v2 != v1                                            # changed content, new version
+    assert static_file_version(str(tmp_path), "missing.css") is None

@@ -55,6 +55,31 @@ def is_safe_redirect_target(target):
 
 
 # ---------------------------------------------------------------------------
+# Static asset versioning — a changed stylesheet must never be served stale
+# ---------------------------------------------------------------------------
+_STATIC_VERSIONS = {}
+
+
+def static_file_version(static_folder, filename):
+    """A short hash of a static file's content, recomputed when the file
+    changes on disk. Appended to the file's URL as ?v=..., so a browser that
+    cached the old stylesheet fetches the new one the moment it changes,
+    while an unchanged file stays cached. Returns None if the file is missing.
+    """
+    path = os.path.join(static_folder, filename)
+    try:
+        mtime = os.stat(path).st_mtime_ns
+    except OSError:
+        return None
+    cached = _STATIC_VERSIONS.get(path)
+    if cached is None or cached[0] != mtime:
+        with open(path, "rb") as fh:
+            cached = (mtime, hashlib.sha1(fh.read()).hexdigest()[:10])
+        _STATIC_VERSIONS[path] = cached
+    return cached[1]
+
+
+# ---------------------------------------------------------------------------
 # Database Migration — Add provenance columns to existing terms table
 # ---------------------------------------------------------------------------
 def _pg_add_columns_if_missing(table, columns):
@@ -720,6 +745,15 @@ def create_app(config_overrides=None):
     db.init_app(app)
     csrf.init_app(app)
     limiter.init_app(app)
+
+    @app.url_defaults
+    def _version_static_urls(endpoint, values):
+        # Every url_for('static', ...) in every template gets ?v=<content hash>
+        # without the templates having to know about it. base.html included.
+        if endpoint == "static" and "filename" in values and "v" not in values:
+            version = static_file_version(app.static_folder, values["filename"])
+            if version:
+                values["v"] = version
 
     # Set up Flask-Login
     login_manager = LoginManager()
