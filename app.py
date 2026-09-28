@@ -830,6 +830,28 @@ def reviewer_required(view):
     return wrapped
 
 
+def _find_reviewer(username):
+    """The reviewer account for a typed username, ignoring capitals.
+
+    Phones capitalise the first letter of a text box, so a reviewer who types
+    "Olive" must still reach the account "olive". An exact match wins; failing
+    that, a match that ignores capitals is used, but only when exactly one
+    account fits. Passwords stay exact.
+    """
+    if not username:
+        return None
+    exact = Reviewer.query.filter_by(username=username).first()
+    if exact is not None:
+        return exact
+    matches = (
+        Reviewer.query
+        .filter(func.lower(Reviewer.username) == username.lower())
+        .limit(2)
+        .all()
+    )
+    return matches[0] if len(matches) == 1 else None
+
+
 def _seed_reviewers():
     """Create reviewer accounts from REVIEWER_ACCOUNTS if they don't exist.
 
@@ -1424,7 +1446,7 @@ def create_app(config_overrides=None):
         if request.method == "POST":
             username = request.form.get("username", "").strip()
             password = request.form.get("password", "")
-            reviewer = Reviewer.query.filter_by(username=username).first()
+            reviewer = _find_reviewer(username)
             if reviewer and reviewer.active and reviewer.check_password(password):
                 login_user(reviewer)
                 session.pop("review_skipped", None)
