@@ -54,6 +54,7 @@
                 <th>Last 7 days</th>
                 <th>Last 14 days</th>
                 <th>Last activity</th>
+                <th>Password</th>
             </tr>
         </thead>
         <tbody>
@@ -72,6 +73,7 @@
                     </div>
                 </td>
                 <td class="label-hint" style="white-space: nowrap;">{% if pg.latest and pg.latest.reviewed_at %}{{ pg.latest.reviewed_at.strftime('%d %b %Y') }}{% else %}not yet{% endif %}</td>
+                <td class="label-hint reviewer-password-state" style="white-space: nowrap;">{% if rv.must_change_password %}temporary, not changed yet{% elif rv.password_changed_at %}their own since {{ rv.password_changed_at.strftime('%d %b') }}{% else %}their own{% endif %}</td>
             </tr>
             {% endfor %}
         </tbody>
@@ -79,7 +81,7 @@
     </div>
 
     <h3 style="margin-top: 1.25rem; font-size: 1rem;">Reset a reviewer password</h3>
-    <p class="label-hint" style="margin-bottom: 0.6rem;">A new password takes effect immediately and is not shown again; send it to the reviewer separately from the login link.</p>
+    <p class="label-hint" style="margin-bottom: 0.6rem;">A new password takes effect immediately and is not shown again; send it to the reviewer separately from the login link. It is temporary: at their next sign-in the reviewer is asked to choose their own, and the Password column above shows when they have.</p>
     {% for rv, pg in reviewer_progress_rows %}
     <form method="POST" action="{{ url_for('admin_reviewer_password', reviewer_id=rv.id) }}" class="password-reset-row">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

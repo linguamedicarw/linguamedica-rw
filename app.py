@@ -574,6 +574,42 @@ def migrate_add_corpus_columns(app):
     conn.close()
 
 
+# Reviewer password state: (name, Postgres DDL, SQLite DDL). Accounts that
+# exist when the column arrives get must_change_password = TRUE, so everyone
+# still on a password someone else set chooses their own at the next sign-in.
+REVIEWER_PASSWORD_COLUMNS = [
+    ("must_change_password", "BOOLEAN NOT NULL DEFAULT TRUE", "BOOLEAN NOT NULL DEFAULT 1"),
+    ("password_changed_at", "TIMESTAMP", "DATETIME"),
+]
+
+
+def migrate_add_reviewer_password_columns(app):
+    """Add the password-state columns to reviewers.
+
+    Must run before anything queries Reviewer through the ORM: the model
+    already names these columns. Idempotent and safe on every startup.
+    """
+    db_uri = app.config['SQLALCHEMY_DATABASE_URI']
+    if db_uri.startswith('postgresql'):
+        _pg_add_columns_if_missing("reviewers", [
+            (name, pg_ddl) for name, pg_ddl, _ in REVIEWER_PASSWORD_COLUMNS
+        ])
+        return
+    if not db_uri.startswith('sqlite'):
+        return
+    db_path = db_uri.replace('sqlite:///', '')
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA table_info(reviewers)")
+    existing = {row[1] for row in cursor.fetchall()}
+    if existing:
+        for name, _, sqlite_ddl in REVIEWER_PASSWORD_COLUMNS:
+            if name not in existing:
+                cursor.execute(f"ALTER TABLE reviewers ADD COLUMN {name} {sqlite_ddl}")
+    conn.commit()
+    conn.close()
+
+
 # ---------------------------------------------------------------------------
 # The annotation corpus — the frozen set of terms the reviewers score
 # ---------------------------------------------------------------------------
@@ -817,8 +853,24 @@ def admin_required(view):
     return wrapped
 
 
+# The same minimum for a password an admin sets and one a reviewer chooses.
+PASSWORD_MIN_LENGTH = 12
+
+
+def _password_step_url(next_page=None):
+    """The page where a reviewer chooses a password, remembering where they
+    were going so they land there once it is saved."""
+    if next_page and is_safe_redirect_target(next_page):
+        return url_for("review_password", next=next_page)
+    return url_for("review_password")
+
+
 def reviewer_required(view):
-    """Only a Reviewer session may pass. Admins get 403, guests get login."""
+    """Only a Reviewer session may pass. Admins get 403, guests get login.
+
+    A reviewer still on a password someone else set is sent to choose their
+    own first; until then the only other page open to them is logging out.
+    """
     @wraps(view)
     def wrapped(*args, **kwargs):
         user = _actual_user()
@@ -826,6 +878,10 @@ def reviewer_required(view):
             return redirect(url_for("review_login", next=request.path))
         if not isinstance(user, Reviewer):
             abort(403)
+        if user.must_change_password and request.endpoint != "review_logout":
+            # Only a page can be returned to afterwards, never a form post.
+            return redirect(_password_step_url(
+                request.path if request.method == "GET" else None))
         return view(*args, **kwargs)
     return wrapped
 
@@ -983,6 +1039,10 @@ def create_app(config_overrides=None):
         if request.path.startswith("/api/"):
             return jsonify({"error": "Too many requests. Please slow down."}), 429
         flash("Too many login attempts. Please wait a minute and try again.", "danger")
+        # A reviewer who mistypes a few times stays on their own login page,
+        # not the admin one.
+        if request.path.startswith("/review"):
+            return render_template("review/login.html"), 429
         return render_template("admin/login.html"), 429
 
     # Create database tables, migrate, and auto-seed new terms
@@ -995,6 +1055,8 @@ def create_app(config_overrides=None):
         migrate_add_variant_columns(app)
         # Before any ORM query on Term (the model already names these columns).
         migrate_add_corpus_columns(app)
+        # Before any ORM query on Reviewer, _seed_reviewers() included.
+        migrate_add_reviewer_password_columns(app)
         migrate_split_compound_entries(app)
         migrate_split_two_concept_entries(app)
         migrate_fix_contributor_attribution(app)
@@ -1253,12 +1315,18 @@ def create_app(config_overrides=None):
         """
         reviewer = db.get_or_404(Reviewer, reviewer_id)
         new_password = request.form.get("new_password", "")
-        if len(new_password) < 12:
-            flash("The new password must be at least 12 characters long.", "danger")
+        if len(new_password) < PASSWORD_MIN_LENGTH:
+            flash(f"The new password must be at least {PASSWORD_MIN_LENGTH} characters long.",
+                  "danger")
             return redirect(url_for("admin_dashboard"))
         reviewer.set_password(new_password)
+        # A password the admin knows is temporary: the reviewer chooses their
+        # own at the next sign-in.
+        reviewer.must_change_password = True
+        reviewer.password_changed_at = None
         db.session.commit()
-        flash(f"Password updated for {reviewer.display_name} ({reviewer.username}).",
+        flash(f"Password updated for {reviewer.display_name} ({reviewer.username}). "
+              f"It is temporary: they will choose their own at their next sign-in.",
               "success")
         return redirect(url_for("admin_dashboard"))
 
@@ -1454,10 +1522,66 @@ def create_app(config_overrides=None):
                 next_page = request.args.get("next")
                 if not is_safe_redirect_target(next_page):
                     next_page = None
+                if reviewer.must_change_password:
+                    return redirect(_password_step_url(next_page))
                 return redirect(next_page or url_for("review_queue"))
             flash("Invalid username or password.", "danger")
 
         return render_template("review/login.html")
+
+    @app.route("/review/password", methods=["GET", "POST"])
+    def review_password():
+        """Choose a new password.
+
+        Required at the first sign-in and after an admin reset, when the
+        account still carries a password someone else chose; open at any
+        other time from the scoring pages, with the current password. Not
+        wrapped in reviewer_required, which would send a reviewer who has
+        not chosen yet straight back here.
+        """
+        user = _actual_user()
+        if user is None:
+            return redirect(url_for("review_login", next=request.path))
+        if not isinstance(user, Reviewer):
+            abort(403)
+        first_time = bool(user.must_change_password)
+        next_page = request.args.get("next")
+        if not is_safe_redirect_target(next_page):
+            next_page = None
+
+        if request.method == "POST":
+            current = request.form.get("current_password", "")
+            new = request.form.get("new_password", "")
+            confirm = request.form.get("confirm_password", "")
+            error = None
+            if not first_time and not user.check_password(current):
+                error = "Your current password is not right. Please type it again."
+            elif len(new) < PASSWORD_MIN_LENGTH:
+                error = f"Please choose at least {PASSWORD_MIN_LENGTH} characters."
+            elif new != confirm:
+                error = "The two new passwords are not the same. Please type them again."
+            elif user.check_password(new):
+                error = ("Please choose a password different from the one you were sent."
+                         if first_time else
+                         "Please choose a password different from your current one.")
+            elif new.strip().casefold() == user.username.casefold():
+                error = "Please choose a password different from your username."
+            if error:
+                flash(error, "danger")
+            else:
+                user.set_password(new)
+                user.must_change_password = False
+                user.password_changed_at = datetime.now(timezone.utc)
+                db.session.commit()
+                flash("Your new password is saved. Use it from now on.", "success")
+                return redirect(next_page or url_for("review_queue"))
+
+        return render_template(
+            "review/password.html",
+            reviewer=user,
+            first_time=first_time,
+            min_length=PASSWORD_MIN_LENGTH,
+        )
 
     @app.route("/review/logout")
     @reviewer_required

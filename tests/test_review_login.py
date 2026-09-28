@@ -16,9 +16,11 @@ PASSWORD = "test-only-password"
 
 
 def _add_reviewer(app, code, username, active=True, display_name=None):
+    # Accounts past their first sign-in; the first-time password step has its
+    # own tests in test_review_password.py.
     with app.app_context():
         r = Reviewer(code=code, display_name=display_name or username.title(),
-                     username=username, active=active)
+                     username=username, active=active, must_change_password=False)
         r.set_password(PASSWORD)
         db.session.add(r)
         db.session.commit()

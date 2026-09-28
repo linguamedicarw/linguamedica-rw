@@ -45,7 +45,8 @@ def _rows():
 
 def _reviewer(app, code, username):
     with app.app_context():
-        r = Reviewer(code=code, display_name=REVIEWER_NAMES[code], username=username)
+        r = Reviewer(code=code, display_name=REVIEWER_NAMES[code], username=username,
+                     must_change_password=False)
         r.set_password(f"{username}-pass")
         db.session.add(r)
         db.session.commit()

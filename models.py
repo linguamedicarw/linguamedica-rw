@@ -292,6 +292,11 @@ class Reviewer(UserMixin, db.Model):
     `code` is the stable reviewer id used in term_reviews.reviewer and in
     REVIEWER_NAMES (app.py): 'CM', 'OU', 'YV'. Author exclusion depends on
     that mapping, so a reviewer must have an entry there before scoring.
+
+    A new account, or one whose password an admin has just reset, carries a
+    password someone else chose. `must_change_password` stays true until the
+    reviewer chooses their own at the next sign-in; from then on only they
+    know it, so a score under their code can only have come from them.
     """
     __tablename__ = "reviewers"
 
@@ -302,6 +307,10 @@ class Reviewer(UserMixin, db.Model):
     password_hash = db.Column(db.String(256), nullable=False)
     active = db.Column(db.Boolean, nullable=False, default=True,
                        server_default=db.text("true"))
+    must_change_password = db.Column(db.Boolean, nullable=False, default=True,
+                                     server_default=db.text("true"))
+    # When the reviewer last chose their own password; None while temporary.
+    password_changed_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(
         db.DateTime,
         default=lambda: datetime.now(timezone.utc)

@@ -21,9 +21,11 @@ REVIEWER_NAME = REVIEWER_NAMES[REVIEWER_CODE]
 
 @pytest.fixture
 def reviewer(app):
-    """A reviewer account for Olive (code OU), created directly in the DB."""
+    """A reviewer account for Olive (code OU), created directly in the DB,
+    already past the first sign-in where she chooses her own password."""
     with app.app_context():
-        r = Reviewer(code=REVIEWER_CODE, display_name=REVIEWER_NAME, username="olive")
+        r = Reviewer(code=REVIEWER_CODE, display_name=REVIEWER_NAME, username="olive",
+                     must_change_password=False)
         r.set_password("olive-pass")
         db.session.add(r)
         db.session.commit()
@@ -322,7 +324,8 @@ def test_admin_can_reset_a_reviewer_password(admin_client, client, app, reviewer
     admin_client.get("/admin/logout")
     assert client.post("/review/login", data={"username": "olive", "password": "olive-pass"}).status_code == 200
     ok = client.post("/review/login", data={"username": "olive", "password": "a-much-longer-secret-42"})
-    assert ok.status_code == 302 and ok.headers["Location"].endswith("/review")
+    # a password the admin set is temporary: the reviewer chooses her own next
+    assert ok.status_code == 302 and ok.headers["Location"].endswith("/review/password")
 
 
 def test_admin_password_reset_rejects_short_passwords(admin_client, client, app, reviewer):

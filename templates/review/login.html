@@ -6,6 +6,7 @@
 <section class="form-section form-section-narrow">
     <h1>Reviewer Login</h1>
     <p class="label-hint">For the LinguaMedica RW validation round. If you are the site administrator, use the <a href="{{ url_for('admin_login') }}">admin login</a> instead.</p>
+    <p class="label-hint">First time here? Sign in with the password you were sent. The site will then ask you to choose your own.</p>
     <form method="POST" class="login-form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="form-group">
