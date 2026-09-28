@@ -1422,10 +1422,61 @@ def create_app(config_overrides=None):
         parts = [p for p in parts if p]
         return " / ".join(parts) or None
 
+    def _existing_headword(english):
+        """The entry already using this English headword (any capitals),
+        public or in a review round: the dictionary keeps one entry per word."""
+        english = (english or "").strip()
+        if not english:
+            return None
+        return Term.query.filter(func.lower(Term.english) == english.lower()).first()
+
+    def _in_open_round(term):
+        return bool(term.corpus_version) and not term.published
+
+    def _resolve_suggestions_for(term, suggestion_id=None):
+        """Close the suggestion a new term came from, and every other active
+        suggestion for the same word, noting where it went. Returns the count."""
+        now = datetime.now(timezone.utc)
+        note = f"Added to the dictionary as '{term.english}' on {now.strftime('%d %b %Y')}."
+        targets = []
+        if suggestion_id:
+            origin = db.session.get(Suggestion, suggestion_id)
+            if origin is not None and not origin.resolved:
+                targets.append(origin)
+        same_word = Suggestion.query.filter(
+            Suggestion.resolved == False,  # noqa: E712  (as the dashboard reads it)
+            func.lower(func.trim(Suggestion.english_word)) == term.english.strip().lower(),
+        ).all()
+        targets += [s for s in same_word if s not in targets]
+        for s in targets:
+            s.status = "approved"
+            s.resolved = True
+            s.resolved_at = now
+            s.admin_notes = f"{s.admin_notes}\n{note}" if s.admin_notes else note
+        return len(targets)
+
     @app.route("/admin/add", methods=["GET", "POST"])
     @admin_required
     def admin_add_term():
+        # Set when the form was opened from a suggestion's "Approve & Add".
+        raw_id = request.form.get("suggestion_id") or request.args.get("suggestion")
+        try:
+            suggestion_id = int(raw_id) if raw_id else None
+        except (TypeError, ValueError):
+            suggestion_id = None
+
         if request.method == "POST":
+            existing = _existing_headword(request.form.get("english"))
+            if existing is not None:
+                if _in_open_round(existing):
+                    flash(f'"{existing.english}" is one of the terms in the review round, '
+                          f'not public yet. Nothing was added; leave it until the round '
+                          f'closes.', "warning")
+                    return redirect(url_for("admin_dashboard"))
+                flash(f'"{existing.english}" is already in the dictionary, so nothing was '
+                      f'added. Here is its entry, if you want to add another form as a '
+                      f'variant.', "warning")
+                return redirect(url_for("admin_edit_term", term_id=existing.id))
             term = Term(
                 english=request.form.get("english", "").strip(),
                 kinyarwanda=request.form.get("kinyarwanda", "").strip(),
@@ -1438,10 +1489,23 @@ def create_app(config_overrides=None):
                 source=request.form.get("source", "").strip() or None,
             )
             db.session.add(term)
+            resolved = _resolve_suggestions_for(term, suggestion_id)
             db.session.commit()
-            flash(f'"{term.english}" has been added to the dictionary.', "success")
+            message = f'"{term.english}" has been added to the dictionary.'
+            if resolved == 1:
+                message += " Its suggestion was marked resolved."
+            elif resolved > 1:
+                message += f" The {resolved} suggestions for it were marked resolved."
+            flash(message, "success")
             return redirect(url_for("admin_dashboard"))
-        return render_template("admin/add_term.html")
+        # Warn before any typing when the word is already here.
+        existing = _existing_headword(request.args.get("english"))
+        return render_template(
+            "admin/add_term.html",
+            existing=existing,
+            existing_in_round=existing is not None and _in_open_round(existing),
+            suggestion_id=suggestion_id,
+        )
 
     @app.route("/admin/edit/<int:term_id>", methods=["GET", "POST"])
     @admin_required
@@ -1475,14 +1539,16 @@ def create_app(config_overrides=None):
     @app.route("/admin/suggestion/<int:suggestion_id>/<action>", methods=["POST"])
     @admin_required
     def admin_handle_suggestion(suggestion_id, action):
-        suggestion = Suggestion.query.get_or_404(suggestion_id)
+        suggestion = db.get_or_404(Suggestion, suggestion_id)
         if action == "approve":
-            # Just open the add-term form pre-filled — don't change status
-            # The suggestion stays in the active panel untouched
+            # Open the add-term form pre-filled, carrying the suggestion's id.
+            # Nothing changes yet: saving the term resolves the suggestion,
+            # cancelling the form leaves it exactly as it is.
             return redirect(url_for(
                 "admin_add_term",
                 english=suggestion.english_word,
-                suggested=suggestion.suggested_translation or ""
+                suggested=suggestion.suggested_translation or "",
+                suggestion=suggestion.id,
             ))
         elif action == "reject":
             suggestion.status = "rejected"
@@ -1494,7 +1560,7 @@ def create_app(config_overrides=None):
     @admin_required
     def admin_resolve_suggestion(suggestion_id):
         """Mark a suggestion as resolved — moves it to the archive."""
-        suggestion = Suggestion.query.get_or_404(suggestion_id)
+        suggestion = db.get_or_404(Suggestion, suggestion_id)
         suggestion.resolved = True
         suggestion.resolved_at = datetime.now(timezone.utc)
         db.session.commit()
@@ -1508,7 +1574,7 @@ def create_app(config_overrides=None):
     @admin_required
     def admin_unresolve_suggestion(suggestion_id):
         """Restore a resolved suggestion back to the active panel."""
-        suggestion = Suggestion.query.get_or_404(suggestion_id)
+        suggestion = db.get_or_404(Suggestion, suggestion_id)
         suggestion.resolved = False
         suggestion.resolved_at = None
         db.session.commit()

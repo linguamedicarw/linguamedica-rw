@@ -6,8 +6,31 @@
 <section class="form-section">
     <h1>{% if editing %}Edit Term{% else %}Add New Term{% endif %}</h1>
 
+    {% if existing and not editing %}
+    <div class="flash flash-warning" id="existingHeadword" style="margin-bottom: 1.25rem;">
+        {# One text block, so the flash layout keeps the sentence in one piece. #}
+        <div>
+        {% if existing_in_round %}
+        <strong>"{{ existing.english }}" is one of the terms in the review round</strong>, not public yet ({{ existing.corpus_version }}). There is nothing to add: leave it until the round closes.
+        {% else %}
+        <strong>"{{ existing.english }}" is already in the dictionary</strong> as <em>{{ existing.kinyarwanda }}</em>. Saving this form would not add it twice. To add another form, <a href="{{ url_for('admin_edit_term', term_id=existing.id) }}">open its entry</a> and put it in the variants.
+        {% endif %}
+        </div>
+        {% if suggestion_id %}
+        <form method="POST" action="{{ url_for('admin_resolve_suggestion', suggestion_id=suggestion_id) }}" style="margin: 0 0 0 1rem; flex-shrink: 0;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-small btn-resolve">Mark the suggestion resolved</button>
+        </form>
+        {% endif %}
+    </div>
+    {% endif %}
+
     <form method="POST" class="term-form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% if suggestion_id and not editing %}
+        {# Opened from "Approve & Add": saving the term resolves this suggestion. #}
+        <input type="hidden" name="suggestion_id" value="{{ suggestion_id }}">
+        {% endif %}
 
         <div class="form-row">
             <div class="form-group">
@@ -20,7 +43,7 @@
                 <label for="kinyarwanda">Kinyarwanda translation *</label>
                 <input type="text" id="kinyarwanda" name="kinyarwanda" required class="form-input"
                        value="{{ term.kinyarwanda if editing else request.args.get('suggested', '') }}"
-                       placeholder="e.g., Umuvuduko w'amaraso">
+                       placeholder="e.g., Umuvuduko ukabije w'amaraso">
             </div>
         </div>
 
@@ -70,7 +93,7 @@
         <div class="form-group">
             <label for="example_rw">Example sentence (Kinyarwanda)</label>
             <textarea id="example_rw" name="example_rw" rows="2" class="form-input"
-                      placeholder="e.g., Umurwayi yasuzumwe afite umuvuduko w'amaraso.">{{ (term.example_rw or '') if editing else '' }}</textarea>
+                      placeholder="e.g., Umurwayi yasuzumwe afite umuvuduko ukabije w'amaraso.">{{ (term.example_rw or '') if editing else '' }}</textarea>
         </div>
 
         <div class="form-group">
@@ -79,7 +102,7 @@
                 <span class="label-hint">(why this translation makes linguistic sense)</span>
             </label>
             <textarea id="etymology" name="etymology" rows="3" class="form-input"
-                      placeholder="e.g., 'Umuvuduko' means pressure/force, 'w'amaraso' means of the blood...">{{ (term.etymology or '') if editing else '' }}</textarea>
+                      placeholder="e.g., 'Umuvuduko' means pressure/force, 'ukabije' means excessive, 'w'amaraso' means of the blood...">{{ (term.etymology or '') if editing else '' }}</textarea>
         </div>
 
         <div class="form-actions">

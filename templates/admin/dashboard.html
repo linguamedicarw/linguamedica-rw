@@ -173,7 +173,7 @@
 <section class="admin-section">
     <h2>Active Suggestions</h2>
     <p style="font-size: 0.85rem; color: var(--color-text-muted); margin-top: -0.5rem; margin-bottom: 1rem;">
-        Suggestions stay here until you mark them resolved. "Approve &amp; Add" opens the form — cancelling it won't remove anything.
+        Suggestions stay here until they are resolved. Saving a word through "Approve &amp; Add" resolves its suggestion, and any other suggestion for the same word; cancelling the form changes nothing.
     </p>
     <div class="suggestion-list">
         {% for s in suggestions %}
@@ -202,7 +202,7 @@
             <p class="suggestion-date">{{ s.created_at.strftime('%b %d, %Y') }}</p>
 
             <div class="suggestion-actions">
-                <!-- Approve & Add: just opens the form pre-filled, no side effects -->
+                <!-- Approve & Add: opens the form pre-filled; saving the term resolves this suggestion -->
                 <form method="POST" action="{{ url_for('admin_handle_suggestion', suggestion_id=s.id, action='approve') }}" style="display:inline;">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" class="btn btn-small btn-success">Approve &amp; Add</button>
