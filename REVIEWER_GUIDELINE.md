@@ -105,7 +105,7 @@ Every term shows you exactly one Kinyarwanda rendering, and that single renderin
 
 **Logging in.** Go to linguamedica.rw/review/login and sign in with the username and password you were given. They are yours alone; please do not share them.
 
-**The queue.** After login the page shows you one term at a time: the English term, the Kinyarwanda rendering, the category, and the example sentences. Two counters at the top show how far through your queue you are and how many terms you have scored today. The order is random and fixed for you, so you cannot choose which term comes next, and the other reviewer sees the same terms in a different order.
+**The queue.** After login the page shows you one term at a time: the English term, the Kinyarwanda rendering, the category, and the example sentences. The terms in this round come from the August 2026 collection, so their example sentence, where there is one, is in Kinyarwanda only. Two counters at the top show how far through your queue you are and how many terms you have scored today. The order is random and fixed for you, so you cannot choose which term comes next, and the other reviewer sees the same terms in a different order.
 
 **Scoring.** Two optional fields come first:
 
