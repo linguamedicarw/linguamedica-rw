@@ -26,7 +26,10 @@ class Term(db.Model):
     A validated medical translation entry.
 
     Only the admin (you) can add these — this is what makes
-    the dictionary trustworthy.
+    the dictionary trustworthy. Entries loaded from a frozen annotation
+    corpus are the one other way in, and they arrive unpublished
+    (see `published` below), so nothing reaches the public dictionary
+    that the editor has not released.
 
     Provenance fields track who contributed each translation
     and where it came from — essential for attribution under
@@ -42,13 +45,15 @@ class Term(db.Model):
     # Recorded and searchable, but never the string a reviewer scores: the
     # scored rendering is always `kinyarwanda` on its own, so one adequacy
     # judgment means the same thing on every row of the corpus.
-    variants_rw = db.Column(db.String(300), nullable=True)
+    # Text, not a short VARCHAR: an entry can carry several long variants
+    # (Differential blood count has five), and Postgres enforces the length.
+    variants_rw = db.Column(db.Text, nullable=True)
 
     # Other English names for the same concept, separated by " / ". The
     # headword in `english` is the single term a reviewer is shown; these are
     # searchable synonyms, so one compound headword never asks a reviewer to
     # hold two concepts at once.
-    variants_en = db.Column(db.String(300), nullable=True)
+    variants_en = db.Column(db.Text, nullable=True)
 
     example_en = db.Column(db.Text, nullable=True)       # Example sentence in English
     example_rw = db.Column(db.Text, nullable=True)        # Example sentence in Kinyarwanda
@@ -69,6 +74,40 @@ class Term(db.Model):
     validation_status = db.Column(db.String(20), nullable=False,
                                   default="unreviewed",
                                   server_default="unreviewed")
+
+    # --- Publication and the annotation corpus ---
+    # Only published terms reach the public site, the API and the exported
+    # data files (the store the RAG build reads). A term added through the
+    # admin form is published at once, as before. Terms loaded from a frozen
+    # annotation corpus arrive unpublished: they are in the database so the
+    # reviewers can score them, and they stay off the public dictionary until
+    # the editor publishes them after the round.
+    published = db.Column(db.Boolean, nullable=False, default=True,
+                          server_default=db.text("true"))
+
+    # Which frozen annotation corpus the term came from ("v1"), and its key in
+    # that file (for example "S84", Sarah Izabayo's row 84). Both stay empty
+    # for terms that did not come from a corpus. The key is what makes the
+    # import idempotent, so it is unique whenever it is set.
+    corpus_version = db.Column(db.String(20), nullable=True, index=True)
+    corpus_key = db.Column(db.String(20), nullable=True, unique=True, index=True)
+
+    # In the pilot subset of the round. The review queue serves only these
+    # while REVIEW_PHASE is "pilot".
+    pilot = db.Column(db.Boolean, nullable=False, default=False,
+                      server_default=db.text("false"))
+
+    # The priority domain the term was sampled from: Diagnostics, Infectious
+    # Disease, Obstetrics or Pharmacology. Separate from `category`, which
+    # says what kind of thing the term is (Placenta is Anatomy by category
+    # and Obstetrics by domain).
+    domain = db.Column(db.String(40), nullable=True)
+
+    # The editor's note recorded with the term in the corpus file: etymology
+    # he gave, why a rendering was corrected, a usage note. Internal: never
+    # shown to reviewers and never part of the public record, because some
+    # notes quote a collector's rendering that the rules keep unpublished.
+    corpus_note = db.Column(db.Text, nullable=True)
 
     created_at = db.Column(
         db.DateTime,
@@ -92,6 +131,9 @@ class Term(db.Model):
             "date_added": self.date_added.isoformat() if self.date_added else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "validation_status": self.validation_status,
+            "published": self.published,
+            "corpus_version": self.corpus_version,
+            "domain": self.domain,
         }
 
     def __repr__(self):

@@ -36,11 +36,13 @@ HOW TO RUN (locally, against production)
     you need the public one.
 
 A NOTE ON VERIFICATION STATUS
-    Every row in `terms` is admin-verified by construction (only the admin can
-    insert terms). Pending user candidates live in the separate `suggestions`
-    queue, not here. So this file is the verified store, full stop. There is no
-    per-term status column today; if tiering is introduced later, that is a
-    schema migration and this exporter gains a field then.
+    Only published terms are exported. A term the admin adds is published at
+    once, as before. Since September 2026 the `terms` table also holds the
+    frozen annotation corpus (data/annotation_corpus_v1.csv), loaded
+    unpublished so the reviewers can score it; those rows are not verified
+    yet, so they are never exported here until the editor publishes them.
+    Pending user candidates still live in the separate `suggestions` queue.
+    So this file is the published store: what the public dictionary shows.
 """
 
 import csv
@@ -146,7 +148,11 @@ def write_csv(rows):
 def main():
     app = make_app()
     with app.app_context():
-        stmt = select(Term).order_by(Term.english.asc(), Term.id.asc())
+        # Published terms only: corpus terms waiting for review stay out of
+        # the store the RAG build reads.
+        stmt = (select(Term)
+                .where(Term.published.is_(True))
+                .order_by(Term.english.asc(), Term.id.asc()))
         terms = db.session.execute(stmt).scalars().all()
 
     rows = [term_to_row(t) for t in terms]

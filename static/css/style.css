@@ -40,6 +40,8 @@
     --color-info-bg: #E3F2FD;
     --color-warning: #E65100;
     --color-warning-bg: #FFF3E0;
+    --color-rw-blue: #15627F;      /* the top stripe of the RW badge */
+    --color-rw-blue-bg: #EAF2F6;
     --radius: 0.5rem;
     --radius-lg: 0.75rem;
     --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
@@ -237,6 +239,23 @@ a:hover {
     border-radius: 2rem;
     font-size: 0.85rem;
     font-weight: 500;
+}
+
+/* The line under the count: how many new terms are with the reviewers.
+   A pale band in the blue of the RW badge, the same shape as the count above
+   it. Blue reads as information; green stays free for verified terms. */
+.hero-review {
+    display: block;
+    width: fit-content;
+    max-width: 100%;
+    margin: 0.5rem auto 0;
+    background: var(--color-rw-blue-bg);
+    color: var(--color-rw-blue);
+    padding: 0.25rem 0.75rem;
+    border-radius: 1rem;
+    font-size: 0.82rem;
+    font-weight: 500;
+    text-wrap: balance;
 }
 
 /* ----------------------------------------------------------------

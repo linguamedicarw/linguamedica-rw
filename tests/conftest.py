@@ -38,6 +38,12 @@ def app(monkeypatch):
         "SQLALCHEMY_DATABASE_URI": f"sqlite:///{db_path}",
         "WTF_CSRF_ENABLED": False,
         "RATELIMIT_ENABLED": False,
+        # The live default, set explicitly so a REVIEW_PHASE exported in the
+        # developer's shell cannot change what the tests see. Tests of the
+        # other phases set app.config["REVIEW_PHASE"] themselves.
+        "REVIEW_PHASE": "pilot",
+        "REVIEW_CORPUS": "v1",
+        "REVIEW_RESULTS_EXPECTED": "November",
     })
     yield application
     os.close(db_fd)

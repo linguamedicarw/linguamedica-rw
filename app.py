@@ -15,6 +15,7 @@ Security features:
 """
 
 import os
+import csv
 import hashlib
 import sqlite3
 from datetime import datetime, timezone, timedelta
@@ -503,6 +504,137 @@ def migrate_add_shown_rw(app):
     conn.close()
 
 
+# Columns added for the annotation corpus, as (name, Postgres DDL, SQLite DDL).
+# `published` defaults to true so every term already in the dictionary stays
+# public exactly as before; only corpus terms are loaded unpublished.
+CORPUS_COLUMNS = [
+    ("published", "BOOLEAN NOT NULL DEFAULT TRUE", "BOOLEAN NOT NULL DEFAULT 1"),
+    ("corpus_version", "VARCHAR(20)", "VARCHAR(20)"),
+    ("corpus_key", "VARCHAR(20)", "VARCHAR(20)"),
+    ("pilot", "BOOLEAN NOT NULL DEFAULT FALSE", "BOOLEAN NOT NULL DEFAULT 0"),
+    ("domain", "VARCHAR(40)", "VARCHAR(40)"),
+    ("corpus_note", "TEXT", "TEXT"),
+]
+CORPUS_INDEXES = [
+    "CREATE UNIQUE INDEX IF NOT EXISTS ix_terms_corpus_key ON terms (corpus_key)",
+    "CREATE INDEX IF NOT EXISTS ix_terms_corpus_version ON terms (corpus_version)",
+]
+
+
+def migrate_add_corpus_columns(app):
+    """Add the publication and annotation-corpus columns to terms, and widen
+    the two variant columns to TEXT on Postgres.
+
+    Must run before anything queries Term through the ORM: the model already
+    names these columns, so on a database that lacks them every ORM query on
+    terms would fail until this has run. Idempotent and safe on every startup.
+
+    Widening: variants_rw began as VARCHAR(300), and Differential blood count
+    carries five variants that together run past 300 characters. SQLite does
+    not enforce VARCHAR lengths, so only Postgres needs the change; it is a
+    catalogue-only change there (no table rewrite), and it is skipped once the
+    column is already TEXT.
+    """
+    db_uri = app.config['SQLALCHEMY_DATABASE_URI']
+    if db_uri.startswith('postgresql'):
+        from sqlalchemy import text
+        _pg_add_columns_if_missing("terms", [
+            (name, pg_ddl) for name, pg_ddl, _ in CORPUS_COLUMNS
+        ])
+        try:
+            with db.engine.begin() as conn:
+                for column in ("variants_rw", "variants_en"):
+                    data_type = conn.execute(text(
+                        "SELECT data_type FROM information_schema.columns "
+                        "WHERE table_schema = current_schema() "
+                        "AND table_name = 'terms' AND column_name = :column"
+                    ), {"column": column}).scalar()
+                    if data_type == "character varying":
+                        conn.execute(text(
+                            f"ALTER TABLE terms ALTER COLUMN {column} TYPE TEXT"
+                        ))
+                for ddl in CORPUS_INDEXES:
+                    conn.execute(text(ddl))
+        except Exception as exc:
+            print(f"[migrate] corpus column widening/indexes skipped: {exc}")
+        return
+    if not db_uri.startswith('sqlite'):
+        return
+    db_path = db_uri.replace('sqlite:///', '')
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA table_info(terms)")
+    existing = {row[1] for row in cursor.fetchall()}
+    for name, _, sqlite_ddl in CORPUS_COLUMNS:
+        if name not in existing:
+            cursor.execute(f"ALTER TABLE terms ADD COLUMN {name} {sqlite_ddl}")
+    for ddl in CORPUS_INDEXES:
+        cursor.execute(ddl)
+    conn.commit()
+    conn.close()
+
+
+# ---------------------------------------------------------------------------
+# The annotation corpus — the frozen set of terms the reviewers score
+# ---------------------------------------------------------------------------
+# One file per corpus version. The file is the frozen record: its SHA-256 is
+# written in the manifest beside it (data/ANNOTATION_CORPUS_v1.md) and checked
+# by the test suite, so an edit after the freeze cannot go unnoticed.
+ANNOTATION_CORPORA = {
+    "v1": os.path.join("data", "annotation_corpus_v1.csv"),
+}
+
+
+def import_annotation_corpus(app, version="v1"):
+    """Load a frozen annotation corpus into terms, unpublished.
+
+    Loads once. If any term of this corpus version is already in the
+    database, nothing happens: from then on the database is the working copy
+    and the file is the frozen record. That keeps an editor's later changes
+    (an adjudicated rendering, a term deliberately removed) from being undone
+    on the next deploy. All rows go in one transaction, so a failure leaves
+    no half-loaded corpus behind and the next boot simply tries again.
+
+    Returns the number of terms created.
+    """
+    relative = ANNOTATION_CORPORA.get(version)
+    if relative is None:
+        return 0
+    path = os.path.join(app.root_path, relative)
+    if not os.path.exists(path):
+        return 0
+    try:
+        if Term.query.filter_by(corpus_version=version).first() is not None:
+            return 0
+        with open(path, encoding="utf-8", newline="") as fh:
+            rows = list(csv.DictReader(fh))
+        for row in rows:
+            db.session.add(Term(
+                english=row["english"],
+                kinyarwanda=row["kinyarwanda"],
+                variants_en=row["english_variants"] or None,
+                variants_rw=row["kinyarwanda_variants"] or None,
+                example_rw=row["example_rw"] or None,
+                category=row["category"] or None,
+                domain=row["domain"] or None,
+                contributed_by=row["contributor"],
+                source=row["provenance"],
+                corpus_note=row["note"] or None,
+                corpus_version=version,
+                corpus_key=row["key"],
+                pilot=(row["pilot"].strip().lower() == "yes"),
+                published=False,
+            ))
+        db.session.commit()
+        print(f"[corpus] loaded annotation corpus {version}: {len(rows)} terms, "
+              f"unpublished")
+        return len(rows)
+    except Exception as exc:
+        db.session.rollback()
+        print(f"[corpus] annotation corpus {version} not loaded: {exc}")
+        return 0
+
+
 # ---------------------------------------------------------------------------
 # Validation status — computed from term_reviews, never set by hand
 # ---------------------------------------------------------------------------
@@ -589,6 +721,25 @@ REVIEW_TZ_OFFSET_HOURS = int(os.environ.get("REVIEW_TZ_OFFSET_HOURS", "2") or 2)
 REVIEW_ROUND_CLOSED = (
     os.environ.get("REVIEW_ROUND_CLOSED", "").strip().lower() in ("1", "true", "yes")
 )
+
+# Which terms the scoring queue serves. The round scores a frozen annotation
+# corpus (REVIEW_CORPUS, "v1"), not the whole terms table:
+#   pilot  only the corpus terms marked as the pilot (the default, so a
+#          fresh deploy can never open the full round by accident)
+#   round  every term in the corpus; pilot scores already given stay counted
+#   all    every term in the table, the behaviour before the corpus existed;
+#          kept for the test suite and local work, not for the live round
+# Set REVIEW_PHASE=round in the environment when the pilot is done.
+REVIEW_PHASES = ("pilot", "round", "all")
+REVIEW_PHASE = os.environ.get("REVIEW_PHASE", "pilot").strip().lower() or "pilot"
+REVIEW_CORPUS = os.environ.get("REVIEW_CORPUS", "v1").strip() or "v1"
+
+# The homepage says how many new terms are with the reviewers, without
+# showing any of them: "+ 189 new terms under independent review, results in
+# November". The line disappears by itself once no term of the corpus is
+# waiting. Set REVIEW_RESULTS_EXPECTED to another month if the date moves, or
+# to an empty value to drop the ", results in ..." part.
+REVIEW_RESULTS_EXPECTED = os.environ.get("REVIEW_RESULTS_EXPECTED", "November").strip()
 
 
 def _review_tz():
@@ -740,6 +891,14 @@ def create_app(config_overrides=None):
         app.config.update(config_overrides)
     app.config.setdefault("REVIEW_ROUND_CLOSED", REVIEW_ROUND_CLOSED)
     app.config.setdefault("REVIEW_DAILY_GOAL", REVIEW_DAILY_GOAL)
+    app.config.setdefault("REVIEW_PHASE", REVIEW_PHASE)
+    app.config.setdefault("REVIEW_CORPUS", REVIEW_CORPUS)
+    app.config.setdefault("REVIEW_RESULTS_EXPECTED", REVIEW_RESULTS_EXPECTED)
+    if app.config["REVIEW_PHASE"] not in REVIEW_PHASES:
+        # An unknown value falls back to the narrowest queue, never the widest.
+        print(f"[review] unknown REVIEW_PHASE {app.config['REVIEW_PHASE']!r}; "
+              f"using 'pilot'")
+        app.config["REVIEW_PHASE"] = "pilot"
 
     # Initialize extensions
     db.init_app(app)
@@ -812,6 +971,8 @@ def create_app(config_overrides=None):
         migrate_add_validation_status(app)
         migrate_add_shown_rw(app)
         migrate_add_variant_columns(app)
+        # Before any ORM query on Term (the model already names these columns).
+        migrate_add_corpus_columns(app)
         migrate_split_compound_entries(app)
         migrate_split_two_concept_entries(app)
         migrate_fix_contributor_attribution(app)
@@ -843,20 +1004,38 @@ def create_app(config_overrides=None):
             if reviewers_created:
                 print(f"[reviewers] created {reviewers_created} reviewer account(s)")
 
+        # The frozen annotation corpora, each loaded once and unpublished.
+        # After the starter terms, so a fresh database gets the dictionary first.
+        for version in ANNOTATION_CORPORA:
+            import_annotation_corpus(app, version)
+
     # -------------------------------------------------------------------
     # PUBLIC ROUTES
     # -------------------------------------------------------------------
 
+    # The public site, the API and the data export show published terms only.
+    # Corpus terms waiting for review are in the table but not in the
+    # dictionary yet.
+    def public_terms():
+        return Term.query.filter(Term.published.is_(True))
+
     @app.route("/")
     def index():
-        terms = Term.query.order_by(Term.english.asc()).all()
-        recent = Term.query.order_by(Term.created_at.desc()).limit(10).all()
+        terms = public_terms().order_by(Term.english.asc()).all()
+        recent = public_terms().order_by(Term.created_at.desc()).limit(10).all()
         terms_json = [t.to_dict() for t in terms]
+        # A count only: the terms themselves stay hidden until they are verified.
+        under_review_count = Term.query.filter(
+            Term.published.is_(False),
+            Term.corpus_version == app.config["REVIEW_CORPUS"],
+        ).count()
         return render_template(
             "index.html",
             terms_json=terms_json,
             recent_terms=recent,
-            total_count=len(terms)
+            total_count=len(terms),
+            under_review_count=under_review_count,
+            review_results_expected=app.config["REVIEW_RESULTS_EXPECTED"],
         )
 
     @app.route("/suggest", methods=["GET", "POST"])
@@ -885,7 +1064,7 @@ def create_app(config_overrides=None):
     @app.route("/api/terms")
     @csrf.exempt
     def api_terms_route():
-        terms = Term.query.order_by(Term.english.asc()).all()
+        terms = public_terms().order_by(Term.english.asc()).all()
         return jsonify([t.to_dict() for t in terms])
 
     @app.route("/api/search")
@@ -895,7 +1074,7 @@ def create_app(config_overrides=None):
         query = request.args.get("q", "").strip().lower()
         if not query:
             return jsonify([])
-        results = Term.query.filter(
+        results = public_terms().filter(
             db.or_(
                 Term.english.ilike(f"%{query}%"),
                 Term.kinyarwanda.ilike(f"%{query}%"),
@@ -977,6 +1156,12 @@ def create_app(config_overrides=None):
     @admin_required
     def admin_dashboard():
         total_terms = Term.query.count()
+        public_count = public_terms().count()
+        unpublished_count = total_terms - public_count
+        corpus_version = app.config["REVIEW_CORPUS"]
+        corpus_count = Term.query.filter_by(corpus_version=corpus_version).count()
+        corpus_pilot_count = Term.query.filter_by(
+            corpus_version=corpus_version, pilot=True).count()
         # Active = not yet resolved (regardless of status)
         active_suggestions = Suggestion.query.filter_by(resolved=False) \
             .order_by(Suggestion.created_at.desc()).all()
@@ -1016,6 +1201,12 @@ def create_app(config_overrides=None):
         return render_template(
             "admin/dashboard.html",
             total_terms=total_terms,
+            public_count=public_count,
+            unpublished_count=unpublished_count,
+            corpus_version=corpus_version,
+            corpus_count=corpus_count,
+            corpus_pilot_count=corpus_pilot_count,
+            review_phase=app.config["REVIEW_PHASE"],
             pending_count=len(active_suggestions),
             suggestions=active_suggestions,
             resolved_suggestions=resolved_suggestions,
@@ -1159,12 +1350,28 @@ def create_app(config_overrides=None):
     # REVIEWER ROUTES — the scoring interface for the validation round
     # -------------------------------------------------------------------
 
+    def _in_review_phase(term):
+        """True if the current phase puts this term in the queue.
+
+        pilot: the corpus terms marked as the pilot; round: every term of the
+        corpus; all: every term in the table (tests and local work only).
+        """
+        phase = app.config["REVIEW_PHASE"]
+        if phase == "all":
+            return True
+        if term.corpus_version != app.config["REVIEW_CORPUS"]:
+            return False
+        if phase == "round":
+            return True
+        return bool(term.pilot)
+
     def _review_queue_for(reviewer):
         """Return (eligible, remaining, ordered_next) for this reviewer.
 
-        eligible: every term this reviewer may score. Excludes the guideline
-                  anchors and any term the reviewer contributed (author
-                  exclusion, mirrored here so they never even see it).
+        eligible: every term this reviewer may score. Only the terms the
+                  current phase serves (see _in_review_phase), minus the
+                  guideline anchors and any term the reviewer contributed
+                  (author exclusion, mirrored here so they never even see it).
         remaining: eligible terms with no blind score from this reviewer yet.
         ordered_next: remaining, in a randomised order that is stable for
                   this reviewer (hash of code + id), with terms they chose
@@ -1177,7 +1384,8 @@ def create_app(config_overrides=None):
         }
         eligible = [
             t for t in Term.query.all()
-            if t.english not in REVIEW_EXCLUDED_TERMS
+            if _in_review_phase(t)
+            and t.english not in REVIEW_EXCLUDED_TERMS
             and not (author_name and t.contributed_by == author_name)
         ]
         eligible.sort(key=lambda t: hashlib.sha256(
@@ -1190,6 +1398,8 @@ def create_app(config_overrides=None):
 
     def _reviewer_may_score(reviewer, term):
         author_name = REVIEWER_NAMES.get(reviewer.code)
+        if not _in_review_phase(term):
+            return False
         if term.english in REVIEW_EXCLUDED_TERMS:
             return False
         if author_name and term.contributed_by == author_name:

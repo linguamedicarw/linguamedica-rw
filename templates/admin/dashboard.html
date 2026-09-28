@@ -10,8 +10,9 @@
 
 <div class="stats-grid">
     <div class="stat-card">
-        <span class="stat-number">{{ total_terms }}</span>
-        <span class="stat-label">Total Terms</span>
+        <span class="stat-number">{{ public_count }}</span>
+        <span class="stat-label">Public Terms</span>
+        {% if unpublished_count %}<span class="label-hint" style="display: block; margin-top: 0.25rem;">+ {{ unpublished_count }} not public yet (annotation corpus)</span>{% endif %}
     </div>
     <div class="stat-card {% if pending_count > 0 %}stat-card-alert{% endif %}">
         <span class="stat-number">{{ pending_count }}</span>
@@ -31,6 +32,16 @@
     <p class="label-hint" style="margin-bottom: 1rem;">
         Distinct terms scored per reviewer (blind scores only). The daily goal is {{ daily_goal }} on the days they can; days are counted from midnight in Kigali.
         {% if round_closed %}<strong>The round is closed:</strong> reviewers can read their lists but not add or change scores.{% else %}The round is open.{% endif %}
+    </p>
+    <p class="label-hint" style="margin-bottom: 1rem;" id="reviewPhase">
+        {% if review_phase == 'pilot' %}
+        Review phase: <strong>pilot</strong>. The queue serves the {{ corpus_pilot_count }} pilot terms of corpus {{ corpus_version }}. Set REVIEW_PHASE=round to open all {{ corpus_count }}.
+        {% elif review_phase == 'round' %}
+        Review phase: <strong>round</strong>. The queue serves all {{ corpus_count }} terms of corpus {{ corpus_version }}; pilot scores already given stay counted.
+        {% else %}
+        Review phase: <strong>all</strong>. The queue serves every term in the table, public ones included. This setting is for local work, not the live round.
+        {% endif %}
+        Corpus terms stay off the public site, the API and the export until published.
     </p>
     {% if reviewer_progress_rows %}
     <div style="overflow-x: auto;">
@@ -293,7 +304,7 @@
             {% for term in all_terms %}
             <tr>
                 <td style="color: #999; font-size: 0.85rem;">{{ term.id }}</td>
-                <td><strong>{{ term.english }}</strong></td>
+                <td><strong>{{ term.english }}</strong>{% if not term.published %} <span class="status-badge status-pending" style="margin-left: 0.4rem;" title="In the annotation corpus, waiting for review. Not on the public site.">not public{% if term.corpus_version %} · {{ term.corpus_version }}{% endif %}{% if term.pilot %} · pilot{% endif %}</span>{% endif %}</td>
                 <td>{{ term.kinyarwanda }}</td>
                 <td>{{ term.category or '—' }}</td>
                 <td style="font-size: 0.85rem; color: #666;">{{ term.source or '—' }}</td>

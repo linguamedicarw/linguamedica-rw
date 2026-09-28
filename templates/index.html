@@ -8,6 +8,7 @@
     <h1>LinguaMedica <span class="hero-rw">RW</span></h1>
     <p class="hero-subtitle">English ↔ Kinyarwanda · Curated medical translations for health professionals</p>
     <p class="hero-count">{{ total_count }} verified terms</p>
+    {% if under_review_count %}<p class="hero-review" id="heroReview">+ {{ under_review_count }} new terms under independent review{% if review_results_expected %}, results in {{ review_results_expected }}{% endif %}</p>{% endif %}
 </section>
 
 <a href="{{ url_for('about') }}" class="home-why">

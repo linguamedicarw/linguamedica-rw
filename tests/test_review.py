@@ -37,7 +37,13 @@ def reviewer_client(client, reviewer):
 
 
 def _make_term(english, kinyarwanda, contributed_by="Christophe Mumaragishyika"):
-    t = Term(english=english, kinyarwanda=kinyarwanda, contributed_by=contributed_by)
+    """A term in the pilot of corpus v1, so the default queue serves it.
+
+    The queue only ever serves the annotation corpus (the pilot by default),
+    so a term made for a scoring test has to be part of it.
+    """
+    t = Term(english=english, kinyarwanda=kinyarwanda, contributed_by=contributed_by,
+             corpus_version="v1", pilot=True, published=False)
     db.session.add(t)
     db.session.commit()
     return t.id
@@ -110,13 +116,22 @@ def test_queue_shows_progress_and_the_term(reviewer_client, app):
 def test_queue_never_shows_contributor_or_etymology(reviewer_client, app):
     with app.app_context():
         t = Term(english="Neutral term", kinyarwanda="Ijambo",
-                 contributed_by="Someone Visible", etymology="A tell-tale etymology")
+                 contributed_by="Someone Visible", etymology="A tell-tale etymology",
+                 source="Recorded by Someone Else, a tell-tale provenance",
+                 corpus_note="A tell-tale editor's note",
+                 variants_rw="Ijambo rya kabiri",
+                 corpus_version="v1", pilot=True, published=False)
         db.session.add(t)
         db.session.commit()
         term_id = t.id
     r = reviewer_client.get(f"/review/term/{term_id}")
+    assert r.status_code == 200          # the page itself, not a refusal
+    assert b"Neutral term" in r.data
     assert b"Someone Visible" not in r.data
     assert b"tell-tale etymology" not in r.data
+    assert b"tell-tale provenance" not in r.data
+    assert b"tell-tale editor" not in r.data
+    assert b"Ijambo rya kabiri" not in r.data   # one rendering on screen, never the variants
 
 
 # --- Scoring ---------------------------------------------------------------
