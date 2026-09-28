@@ -253,7 +253,11 @@ def test_no_seeded_entry_carries_a_compound_headword_or_rendering(app):
 def test_the_recorded_decisions_are_applied_to_the_seeded_corpus(app):
     from models import Term
     expected = {
-        "Diabetes": ("Diyabete", "Indwara y'igisukari"),
+        # 28 Sep 2026, the editor: Igisukari and Gisukari added to Diabetes,
+        # Asima to Asthma, and Hypertension corrected (EDITOR_CORRECTIONS).
+        "Diabetes": ("Diyabete", "Indwara y'igisukari / Igisukari / Gisukari"),
+        "Asthma": ("Gusemeka", "Isemeka / Asima"),
+        "Hypertension": ("Umuvuduko ukabije w'amaraso", None),
         "Headache": ("Kubabara umutwe", "Kuribwa n'umutwe / Kuribwa umutwe"),
         "Traditional medicine": ("Ubuvuzi gakondo",
                                  "Ubuvuzi bukoresha imiti gakondo / Imiti ikomoka ku bimera"),

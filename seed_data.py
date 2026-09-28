@@ -37,24 +37,24 @@ STARTER_TERMS = [
     # =================================================================
     {
         "english": "Hypertension",
-        "kinyarwanda": "Umuvuduko w'amaraso",
+        "kinyarwanda": "Umuvuduko ukabije w'amaraso",
         "example_en": "The patient was diagnosed with hypertension.",
-        "example_rw": "Umurwayi yasuzumwe afite umuvuduko w'amaraso.",
-        "etymology": "'Umuvuduko' means pressure or force, 'w'amaraso' means of the blood — literally 'pressure of the blood.'",
+        "example_rw": "Umurwayi yasuzumwe afite umuvuduko ukabije w'amaraso.",
+        "etymology": "'Umuvuduko' means pressure or force, 'ukabije' means excessive, and 'w'amaraso' means of the blood: literally 'excessive pressure of the blood', pressure above normal.",
         "category": "Cardiology",
         "contributed_by": "Christophe Mumaragishyika",
-        "source": "Original starter terms"
+        "source": "Original starter terms; rendering corrected by the editor, 28 September 2026"
     },
     {
         "english": "Diabetes",
         "kinyarwanda": "Diyabete",
-        "variants_rw": "Indwara y'igisukari",
+        "variants_rw": "Indwara y'igisukari / Igisukari / Gisukari",
         "example_en": "Diabetes requires careful management of blood sugar levels.",
         "example_rw": "Diyabete isaba kwitaho neza urwego rw'isukari mu maraso.",
         "etymology": "'Indwara y'igisukari' literally translates to 'disease of sugar,' which accurately captures the core characteristic of diabetes — the body's inability to regulate blood sugar.",
         "category": "Endocrinology",
         "contributed_by": "Christophe Mumaragishyika",
-        "source": "Original starter terms"
+        "source": "Original starter terms; variants 'Igisukari' and 'Gisukari' added by the editor, 28 September 2026"
     },
     {
         "english": "Malaria",
@@ -144,7 +144,7 @@ STARTER_TERMS = [
     {"english": "Anxiety", "kinyarwanda": "Ihangayika rikabije", "example_en": "The study measured anxiety levels among NCD patients.", "example_rw": "Ubushakashatsi bwapimye urwego rw'ihangayika rikabije mu barwayi b'indwara zitandura.", "etymology": "'Ihangayika' means worry or agitation. Adding 'rikabije' (severe) elevates it from everyday worry to the clinical concept of anxiety disorder.", "category": "Mental Health", "contributed_by": "Christophe Mumaragishyika", "source": "Annie Chibwe consent form"},
     {"english": "Depression", "kinyarwanda": "Agahinda gakabije", "example_en": "Depression can significantly affect treatment adherence.", "example_rw": "Agahinda gakabije gashobora kugira ingaruka ku myitwarire nyubahirizamiti ikwiye.", "etymology": "'Agahinda' uses the diminutive prefix aga- on the root -hinda (sadness), and 'gakabije' (severe/extreme) elevates it to a clinical condition.", "category": "Mental Health", "contributed_by": "Christophe Mumaragishyika", "source": "Annie Chibwe consent form"},
     {"english": "Asthma", "kinyarwanda": "Gusemeka",
- "variants_rw": "Isemeka", "example_en": "Asthma patients require regular follow-up at NCD clinics.", "example_rw": "Abarwayi barwaye gusemeka bakeneye gukurikiranwa buri gihe mu mavuriro y'indwara zitandura.", "etymology": "'Gusemeka' is the verbal form meaning 'to have difficulty breathing,' while 'isemeka' is the nominal form.", "category": "Pulmonology", "contributed_by": "Christophe Mumaragishyika", "source": "Annie Chibwe consent form"},
+ "variants_rw": "Isemeka / Asima", "example_en": "Asthma patients require regular follow-up at NCD clinics.", "example_rw": "Abarwayi barwaye gusemeka bakeneye gukurikiranwa buri gihe mu mavuriro y'indwara zitandura.", "etymology": "'Gusemeka' is the verbal form meaning 'to have difficulty breathing,' while 'isemeka' is the nominal form.", "category": "Pulmonology", "contributed_by": "Christophe Mumaragishyika", "source": "Annie Chibwe consent form; variant 'Asima' added by the editor, 28 September 2026"},
     {"english": "Non-communicable disease", "kinyarwanda": "Indwara zitandura", "example_en": "Non-communicable diseases are a growing health concern in Rwanda.", "example_rw": "Indwara zitandura ni ikibazo cy'ubuzima kigenda gikura mu Rwanda.", "etymology": "'Indwara' means diseases, 'zitandura' uses the negative prefix zi- on -tandura (to spread/transmit). Literally 'diseases that do not spread.'", "category": "Public Health", "contributed_by": "Christophe Mumaragishyika", "source": "Annie Chibwe consent form"},
     {"english": "Mental health", "kinyarwanda": "Ubuzima bwo mu mutwe", "example_en": "Integrating mental health services into primary care is essential.", "example_rw": "Kongera serivisi zita ku buzima bwo mu mutwe muri serivizi z'ubuvuzi rusange z'ibanze ni ngombwa.", "etymology": "'Ubuzima' means health, 'bwo mu mutwe' means 'of the head/mind.' The anatomical metaphor locates the concept physically.", "category": "Mental Health", "contributed_by": "Christophe Mumaragishyika", "source": "Annie Chibwe consent form"},
     {"english": "Psychosocial support", "kinyarwanda": "Ubufasha nturishamutima", "example_en": "Participants who experience distress will be referred for psychosocial support.", "example_rw": "Abagize uruhare bahuye n'ibibazo bazashyirwa ku bufasha nturishamutima.", "etymology": "'Ubufasha' means help/assistance. 'Nturishamutima' is a compound: nturisha (to console/comfort) + umutima (heart). Literally 'help that consoles the heart.'", "category": "Mental Health", "contributed_by": "Christophe Mumaragishyika", "source": "Annie Chibwe consent form"},

@@ -334,6 +334,12 @@ def migrate_split_compound_entries(app):
                       if f in fix}
             if all(getattr(term, f) == v for f, v in wanted.items()):
                 continue
+            # Split already done: the chosen headword is in place, and later
+            # decisions (EDITOR_CORRECTIONS) have since added variants or a
+            # note. Leave it quietly rather than warn on every boot.
+            if ("kinyarwanda" in fix and term.kinyarwanda == fix["kinyarwanda"]
+                    and term.english == fix.get("english", key)):
+                continue
 
             # The Kinyarwanda guard is advisory, and deliberately does not
             # abort the whole row. If the rendering has been edited since
@@ -447,6 +453,81 @@ def migrate_fix_contributor_attribution(app):
     except Exception as exc:
         db.session.rollback()
         print(f"[migrate] contributor attribution correction skipped: {exc}")
+
+
+# The editor's corrections to entries that are already live, applied to the
+# database at startup so that a commit and a push are enough to change the
+# site. Each change names the value it replaces: a field is updated only while
+# it still holds that exact old value, so an entry already fixed by hand in
+# the admin panel, or changed again later, is left as it is. Idempotent: once
+# applied, the old values no longer match. seed_data.py carries the same new
+# values, so a fresh database starts corrected. Never list a term of an
+# annotation corpus here while its round is open.
+EDITOR_CORRECTIONS = [
+    # 28 September 2026, Khris: hypertension is pressure above normal, which
+    # 'ukabije' (excessive) carries; the entry named the pressure only.
+    ("Hypertension", {
+        "kinyarwanda": ("Umuvuduko w'amaraso", "Umuvuduko ukabije w'amaraso"),
+        "example_rw": ("Umurwayi yasuzumwe afite umuvuduko w'amaraso.",
+                       "Umurwayi yasuzumwe afite umuvuduko ukabije w'amaraso."),
+        "etymology": (
+            "'Umuvuduko' means pressure or force, 'w'amaraso' means of the blood "
+            "— literally 'pressure of the blood.'",
+            "'Umuvuduko' means pressure or force, 'ukabije' means excessive, and "
+            "'w'amaraso' means of the blood: literally 'excessive pressure of the "
+            "blood', pressure above normal."),
+        "source": ("Original starter terms",
+                   "Original starter terms; rendering corrected by the editor, "
+                   "28 September 2026"),
+    }),
+    # 28 September 2026, Khris: variants added by the editor.
+    ("Asthma", {
+        "variants_rw": ("Isemeka", "Isemeka / Asima"),
+        "source": ("Annie Chibwe consent form",
+                   "Annie Chibwe consent form; variant 'Asima' added by the "
+                   "editor, 28 September 2026"),
+    }),
+    ("Diabetes", {
+        "variants_rw": ("Indwara y'igisukari",
+                        "Indwara y'igisukari / Igisukari / Gisukari"),
+        "source": ("Original starter terms",
+                   "Original starter terms; variants 'Igisukari' and 'Gisukari' "
+                   "added by the editor, 28 September 2026"),
+    }),
+]
+
+
+def migrate_apply_editor_corrections(app):
+    """Apply EDITOR_CORRECTIONS to the live entries they name.
+
+    A field changes only while it still holds the recorded old value; a field
+    already holding the new value is done; anything else was edited by hand
+    and is reported, never overwritten. Safe on every startup.
+    """
+    try:
+        applied, kept = [], []
+        for english, changes in EDITOR_CORRECTIONS:
+            term = Term.query.filter_by(english=english).first()
+            if term is None:
+                continue
+            for field, (old, new) in changes.items():
+                current = getattr(term, field)
+                if current == new:
+                    continue
+                if current == old:
+                    setattr(term, field, new)
+                    applied.append(f"{english}: {field}")
+                else:
+                    kept.append(f"{english}: {field}")
+        if applied:
+            db.session.commit()
+            print(f"[migrate] editor corrections applied ({'; '.join(applied)})")
+        for item in kept:
+            print(f"[migrate] editor correction left out for {item}: "
+                  f"the field was edited since, so it stays as it is")
+    except Exception as exc:
+        db.session.rollback()
+        print(f"[migrate] editor corrections skipped: {exc}")
 
 
 def migrate_add_validation_status(app):
@@ -1060,6 +1141,7 @@ def create_app(config_overrides=None):
         migrate_split_compound_entries(app)
         migrate_split_two_concept_entries(app)
         migrate_fix_contributor_attribution(app)
+        migrate_apply_editor_corrections(app)
 
         from seed_data import STARTER_TERMS, ADMIN_USERNAME, ADMIN_PASSWORD
 
