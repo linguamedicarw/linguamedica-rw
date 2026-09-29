@@ -170,15 +170,19 @@
      ACTIVE SUGGESTIONS — stays here until YOU mark it resolved
      ============================================================ -->
 {% if suggestions %}
-<section class="admin-section">
+<section class="admin-section" id="suggestions">
     <h2>Active Suggestions</h2>
     <p style="font-size: 0.85rem; color: var(--color-text-muted); margin-top: -0.5rem; margin-bottom: 1rem;">
-        Suggestions stay here until they are resolved. Saving a word through "Approve &amp; Add" resolves its suggestion, and any other suggestion for the same word; cancelling the form changes nothing.
+        Tick suggestions to resolve or reject them together, with the bar that stays at the bottom of the screen; hold Shift to tick a whole run at once. Saving a word through "Approve &amp; Add" resolves its suggestion, and any other suggestion for the same word. Nothing here is deleted: the Resolved Archive keeps everything and can restore it.
     </p>
     <div class="suggestion-list">
         {% for s in suggestions %}
+        {% set info = suggestion_info.get(s.id) %}
         <div class="suggestion-card">
             <div class="suggestion-header">
+                <input type="checkbox" class="bulk-check" name="ids" value="{{ s.id }}" form="bulkActive"
+                       aria-label="Select {{ s.english_word }}"
+                       data-in-dictionary="{{ 1 if info and info.all_public else 0 }}">
                 <strong>{{ s.english_word }}</strong>
                 {% if s.suggested_translation %}
                     <span class="suggestion-arrow">→</span>
@@ -193,6 +197,12 @@
                     <span class="status-badge status-pending">Pending</span>
                 {% endif %}
             </div>
+            {% if info and info.terms %}
+            <p class="suggestion-match{% if info.in_round %} suggestion-match-round{% endif %}">
+                {% if info.all_public %}Already in the dictionary:{% elif info.in_round %}In the review round, not public yet:{% else %}Partly in the dictionary:{% endif %}
+                {% for t in info.terms %}<strong>{{ t.english }}</strong>{% if t.published %} = <em>{{ t.kinyarwanda }}</em>{% if t.variants_rw %} <span class="suggestion-match-also">(also {{ t.variants_rw }})</span>{% endif %}{% endif %}{% if not loop.last %}; {% endif %}{% endfor %}
+            </p>
+            {% endif %}
             {% if s.context %}
                 <p class="suggestion-context">{{ s.context }}</p>
             {% endif %}
@@ -207,24 +217,33 @@
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" class="btn btn-small btn-success">Approve &amp; Add</button>
                 </form>
-                <!-- Reject: marks as rejected but keeps it visible -->
-                {% if s.status != 'rejected' %}
+                <!-- Reject: marks it rejected and moves it to the archive -->
                 <form method="POST" action="{{ url_for('admin_handle_suggestion', suggestion_id=s.id, action='reject') }}" style="display:inline;">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" class="btn btn-small btn-danger">Reject</button>
                 </form>
-                {% endif %}
-                <!-- Resolve: the ONLY way to move a suggestion out of this panel -->
+                <!-- Resolve: moves it to the archive; "Restore to Active" undoes it -->
                 <form method="POST" action="{{ url_for('admin_resolve_suggestion', suggestion_id=s.id) }}" style="display:inline;">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button type="submit" class="btn btn-small btn-resolve" onclick="return confirm('Mark this suggestion as resolved? It will move to the archive.');">
-                        ✓ Resolved
-                    </button>
+                    <button type="submit" class="btn btn-small btn-resolve">✓ Resolved</button>
                 </form>
             </div>
         </div>
         {% endfor %}
     </div>
+
+    <!-- One bar for the ticked cards; it stays in view while the list scrolls -->
+    <form id="bulkActive" method="POST" action="{{ url_for('admin_bulk_suggestions') }}" class="bulk-bar">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <span class="bulk-count" aria-live="polite">0 selected</span>
+        <button type="button" class="btn btn-small btn-outline" data-bulk-select="all">Select all ({{ suggestions|length }})</button>
+        {% if in_dictionary_count %}
+        <button type="button" class="btn btn-small btn-outline" data-bulk-select="dictionary">Already in the dictionary ({{ in_dictionary_count }})</button>
+        {% endif %}
+        <button type="button" class="btn btn-small btn-outline" data-bulk-select="none">Clear</button>
+        <button type="submit" name="action" value="resolve" class="btn btn-small btn-resolve">✓ Resolve selected</button>
+        <button type="submit" name="action" value="reject" class="btn btn-small btn-danger">Reject selected</button>
+    </form>
 </section>
 {% endif %}
 
@@ -243,6 +262,8 @@
             {% for s in resolved_suggestions %}
             <div class="suggestion-card suggestion-card-resolved">
                 <div class="suggestion-header">
+                    <input type="checkbox" class="bulk-check" name="ids" value="{{ s.id }}" form="bulkArchive"
+                           aria-label="Select {{ s.english_word }}">
                     <strong>{{ s.english_word }}</strong>
                     {% if s.suggested_translation %}
                         <span class="suggestion-arrow">→</span>
@@ -274,6 +295,13 @@
             </div>
             {% endfor %}
         </div>
+        <form id="bulkArchive" method="POST" action="{{ url_for('admin_bulk_suggestions') }}" class="bulk-bar">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <span class="bulk-count" aria-live="polite">0 selected</span>
+            <button type="button" class="btn btn-small btn-outline" data-bulk-select="all">Select all ({{ resolved_suggestions|length }})</button>
+            <button type="button" class="btn btn-small btn-outline" data-bulk-select="none">Clear</button>
+            <button type="submit" name="action" value="restore" class="btn btn-small btn-outline">↩ Restore selected to Active</button>
+        </form>
     </div>
 </section>
 {% endif %}
@@ -374,4 +402,5 @@ function toggleTopSearches() {
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/password-toggle.js') }}"></script>
+<script src="{{ url_for('static', filename='js/bulk-select.js') }}"></script>
 {% endblock %}

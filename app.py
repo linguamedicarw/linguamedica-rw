@@ -946,6 +946,37 @@ def _password_step_url(next_page=None):
     return url_for("review_password")
 
 
+def suggestion_matches(suggestions, terms):
+    """For each suggestion, the entries its word already has in the table.
+
+    A suggestion like "miscarriage/abortion" is split on "/" and each part is
+    looked up by English headword, then by English variant, ignoring capitals
+    and outer spaces. Returns {suggestion id: {"terms": [...], "all_public":
+    bool, "in_round": bool}}, where all_public means every part is already a
+    public entry, so resolving the suggestion loses nothing.
+    """
+    index = {}
+    for t in terms:
+        index.setdefault((t.english or "").strip().casefold(), t)
+    for t in terms:
+        for variant in (t.variants_en or "").split("/"):
+            key = variant.strip().casefold()
+            if key:
+                index.setdefault(key, t)
+    out = {}
+    for s in suggestions:
+        parts = [p.strip().casefold() for p in (s.english_word or "").split("/") if p.strip()]
+        found = [index.get(p) for p in parts]
+        hits = [t for t in found if t is not None]
+        out[s.id] = {
+            "terms": list(dict.fromkeys(hits)),
+            "all_public": bool(parts) and all(t is not None and t.published for t in found),
+            "in_round": any(t is not None and not t.published and t.corpus_version
+                            for t in found),
+        }
+    return out
+
+
 def reviewer_required(view):
     """Only a Reviewer session may pass. Admins get 403, guests get login.
 
@@ -1335,6 +1366,9 @@ def create_app(config_overrides=None):
         resolved_suggestions = Suggestion.query.filter_by(resolved=True) \
             .order_by(Suggestion.resolved_at.desc()).all()
         all_terms = Term.query.order_by(Term.english.asc()).all()
+        # Which suggested words the dictionary already holds, for the note on
+        # each card and "Select those already in the dictionary".
+        matches = suggestion_matches(active_suggestions, all_terms)
 
         # --- Search analytics ---
         total_searches = SearchLog.query.count()
@@ -1375,6 +1409,8 @@ def create_app(config_overrides=None):
             review_phase=app.config["REVIEW_PHASE"],
             pending_count=len(active_suggestions),
             suggestions=active_suggestions,
+            suggestion_info=matches,
+            in_dictionary_count=sum(1 for m in matches.values() if m["all_public"]),
             resolved_suggestions=resolved_suggestions,
             all_terms=all_terms,
             total_searches=total_searches,
@@ -1551,10 +1587,66 @@ def create_app(config_overrides=None):
                 suggestion=suggestion.id,
             ))
         elif action == "reject":
-            suggestion.status = "rejected"
+            _reject_suggestion(suggestion, datetime.now(timezone.utc))
             db.session.commit()
-            flash(f'"{suggestion.english_word}" marked as rejected.', "info")
-        return redirect(url_for("admin_dashboard"))
+            flash(f'"{suggestion.english_word}" rejected and moved to the archive. '
+                  f'"Restore to Active" brings it back.', "info")
+        return redirect(url_for("admin_dashboard") + "#suggestions")
+
+    def _reject_suggestion(suggestion, now):
+        """A rejected word is handled: mark it rejected and close it."""
+        suggestion.status = "rejected"
+        if not suggestion.resolved:
+            suggestion.resolved = True
+            suggestion.resolved_at = now
+        note = f"Rejected on {now.strftime('%d %b %Y')}."
+        if note not in (suggestion.admin_notes or ""):
+            suggestion.admin_notes = (f"{suggestion.admin_notes}\n{note}"
+                                      if suggestion.admin_notes else note)
+
+    BULK_SUGGESTION_ACTIONS = {
+        "resolve": "resolved",
+        "reject": "rejected",
+        "restore": "restored to the active list",
+    }
+
+    @app.route("/admin/suggestions/bulk", methods=["POST"])
+    @admin_required
+    def admin_bulk_suggestions():
+        """Resolve, reject or restore every ticked suggestion in one step.
+
+        Nothing is deleted, and each action can be undone from the other
+        list, so there is no confirmation dialog.
+        """
+        action = request.form.get("action", "")
+        ids = []
+        for raw in request.form.getlist("ids"):
+            try:
+                ids.append(int(raw))
+            except (TypeError, ValueError):
+                continue
+        if action not in BULK_SUGGESTION_ACTIONS or not ids:
+            flash("Nothing was changed: tick at least one suggestion first.", "info")
+            return redirect(url_for("admin_dashboard") + "#suggestions")
+        now = datetime.now(timezone.utc)
+        changed = 0
+        for s in Suggestion.query.filter(Suggestion.id.in_(ids)).all():
+            if action == "resolve" and not s.resolved:
+                s.resolved, s.resolved_at = True, now
+                changed += 1
+            elif action == "reject" and not (s.resolved and s.status == "rejected"):
+                _reject_suggestion(s, now)
+                changed += 1
+            elif action == "restore" and s.resolved:
+                s.resolved, s.resolved_at = False, None
+                changed += 1
+        db.session.commit()
+        noun = "suggestion" if changed == 1 else "suggestions"
+        message = f"{changed} {noun} {BULK_SUGGESTION_ACTIONS[action]}."
+        if action != "restore" and changed:
+            message += " You can bring any of them back from the Resolved Archive."
+        flash(message, "success")
+        return redirect(url_for("admin_dashboard") + "#suggestions")
 
     @app.route("/admin/suggestion/<int:suggestion_id>/resolve", methods=["POST"])
     @admin_required
@@ -1568,7 +1660,7 @@ def create_app(config_overrides=None):
             f'"{suggestion.english_word}" resolved and moved to archive.',
             "success"
         )
-        return redirect(url_for("admin_dashboard"))
+        return redirect(url_for("admin_dashboard") + "#suggestions")
 
     @app.route("/admin/suggestion/<int:suggestion_id>/unresolve", methods=["POST"])
     @admin_required
@@ -1582,7 +1674,7 @@ def create_app(config_overrides=None):
             f'"{suggestion.english_word}" restored to active suggestions.',
             "info"
         )
-        return redirect(url_for("admin_dashboard"))
+        return redirect(url_for("admin_dashboard") + "#suggestions")
 
     # -------------------------------------------------------------------
     # REVIEWER ROUTES — the scoring interface for the validation round

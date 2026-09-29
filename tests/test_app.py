@@ -87,17 +87,21 @@ def test_login_ignores_offsite_redirect(client):
     assert "evil.example.com" not in r.headers["Location"]
 
 
-def test_dashboard_confirm_dialog_is_not_injectable(admin_client):
-    """#29: a crafted suggestion name must not reach an inline JS handler."""
+def test_dashboard_never_puts_a_suggestion_into_inline_script(admin_client):
+    """#29: a crafted suggestion name must not reach an inline JS handler.
+
+    The Resolve confirm dialog is gone (every action can be undone from the
+    archive), and the name only ever appears escaped, as text or attribute."""
     payload = 'pwn");alert(1)//'
     admin_client.post("/suggest", data={"english_word": payload})
     html = admin_client.get("/admin").get_data(as_text=True)
-    # The Resolve confirm is now a static string (no term interpolation).
-    assert "Mark this suggestion as resolved?" in html
+    assert "Mark this suggestion as resolved?" not in html
     # The payload must not appear inside any onclick handler.
     for chunk in html.split('onclick="')[1:]:
         onclick_value = chunk.split('"')[0]
         assert "alert(1)" not in onclick_value
+    assert 'pwn");alert(1)//' not in html
+    assert "pwn&#34;);alert(1)//" in html
 
 # ---------------------------------------------------------------------------
 # Variants — alternative Kinyarwanda forms, searchable but never scored
