@@ -96,6 +96,89 @@
 </section>
 
 <!-- ============================================================
+     VISITORS — counted on the site itself, anonymously
+     ============================================================ -->
+{% set v = visitors %}
+<section class="admin-section" id="visitors">
+    <h2>Visitors</h2>
+    <p class="label-hint" style="margin-bottom: 1rem;">
+        {% if v.first_day %}Counted since {{ v.first_day.strftime('%d %b %Y') }}.{% else %}Counting starts with the first visit after this update.{% endif %}
+        Each visitor counts once a day. Bots, link previews and anyone signed in (you, the reviewers) are left out. The counter sets no cookie and stores no IP address. Days run from midnight in Kigali.
+    </p>
+    <div class="stats-grid">
+        <div class="stat-card">
+            <span class="stat-number">{{ v.today.visitors }}</span>
+            <span class="stat-label">Visitors today</span>
+            <span class="label-hint" style="display: block; margin-top: 0.25rem;">{{ v.today.views }} page view{{ '' if v.today.views == 1 else 's' }}</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-number">{{ v.week.visitors }}</span>
+            <span class="stat-label">Last 7 days</span>
+            <span class="label-hint" style="display: block; margin-top: 0.25rem;">{{ v.week.views }} page view{{ '' if v.week.views == 1 else 's' }}</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-number">{{ v.month.visitors }}</span>
+            <span class="stat-label">Last {{ v.days }} days</span>
+            <span class="label-hint" style="display: block; margin-top: 0.25rem;">{{ v.month.views }} page view{{ '' if v.month.views == 1 else 's' }}</span>
+        </div>
+    </div>
+
+    {% if v.month.visitors %}
+    <div class="visitor-days" title="Visitors per day, last {{ v.days }} days">
+        {% for day, n in v.series %}
+        <div class="visitor-day" style="height: {{ 4 if n == 0 else 6 + (54 * n) // v.peak }}px;" title="{{ day.strftime('%a %d %b') }}: {{ n }} visitor{{ '' if n == 1 else 's' }}"></div>
+        {% endfor %}
+    </div>
+    <p class="label-hint" style="display: flex; justify-content: space-between;"><span>{{ v.series[0][0].strftime('%d %b') }}</span><span>busiest day: {{ v.peak }}</span><span>today</span></p>
+
+    <div class="visitor-breakdowns">
+        {% for title, items in [("Countries", v.countries), ("Came from", v.referrers), ("Devices", v.devices), ("Browser language", v.languages)] %}
+        <div>
+            <h3>{{ title }}</h3>
+            <table class="admin-table admin-table-compact">
+                {% for name, n, pct in items %}
+                <tr><td>{{ name }}</td><td class="num">{{ n }}</td><td class="num label-hint">{{ pct }}%</td></tr>
+                {% endfor %}
+            </table>
+        </div>
+        {% endfor %}
+        <div>
+            <h3>Pages</h3>
+            <table class="admin-table admin-table-compact">
+                {% for path, n in v.pages %}
+                <tr><td>{{ path }}</td><td class="num">{{ n }}</td><td></td></tr>
+                {% endfor %}
+            </table>
+        </div>
+    </div>
+    <p class="label-hint">The last {{ v.days }} days, each visitor counted once. Countries come from Cloudflare; "Came from" is the referring site, or the utm_source of a link you shared.</p>
+    {% endif %}
+
+    <h3 style="margin-top: 1.25rem; font-size: 1rem;">Searches{% if v.first_search %} since {{ v.first_search.strftime('%B %Y') }}{% endif %}</h3>
+    {% if v.search_months %}
+    <div class="search-months">
+        {% for label, n in v.search_months %}
+        <div class="search-month" title="{{ label }}: {{ n }} search{{ '' if n == 1 else 'es' }}">
+            <div class="search-month-bar" style="height: {{ 3 if n == 0 else 6 + (64 * n) // v.month_peak }}px;"></div>
+            <span class="search-month-count">{{ n }}</span>
+            <span class="search-month-label">{{ label[:3] }}</span>
+        </div>
+        {% endfor %}
+    </div>
+    <p class="label-hint">
+        Last {{ v.days }} days: {{ v.searches_30 }} search{{ '' if v.searches_30 == 1 else 'es' }}{% if v.empty_share_30 is not none %}, {{ v.empty_share_30 }}% of them found nothing{% endif %}.
+        {% if v.searching_share_30 is not none %}{{ v.searching_share_30 }}% of visitors searched.{% endif %}
+        The search log goes back to launch; it records what was searched, never who searched.
+    </p>
+    {% else %}
+    <p class="label-hint">No searches logged yet.</p>
+    {% endif %}
+    <p class="label-hint" style="margin-top: 0.75rem;">
+        For your own analysis: <a href="{{ url_for('admin_page_views_csv') }}">page views (CSV)</a> · <a href="{{ url_for('admin_searches_csv') }}">searches since launch (CSV)</a>
+    </p>
+</section>
+
+<!-- ============================================================
      TERMS PEOPLE CAN'T FIND — priority queue for new terms
      ============================================================ -->
 {% if no_results_queries %}

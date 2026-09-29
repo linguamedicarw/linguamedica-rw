@@ -244,9 +244,41 @@ class SearchLog(db.Model):
         db.DateTime,
         default=lambda: datetime.now(timezone.utc)
     )
+    # The same anonymous, day-long code as the searcher's page views (see
+    # PageView.visitor), so a day's searches can be tied to a day's visits.
+    # None for searches made while signed in, and for rows logged before
+    # visitors were counted.
+    visitor = db.Column(db.String(16), nullable=True, index=True)
 
     def __repr__(self):
         return f"<SearchLog: '{self.query_text}' ({self.results_count} results)>"
+
+
+class PageView(db.Model):
+    """
+    One visit to a public page, counted without cookies or IP addresses.
+
+    `visitor` is a 16-character code made from the browser's address and
+    user agent together with the day and the app's secret key. It is the same
+    for all of one browser's visits on one day, different the next day, and
+    cannot be turned back into an address, so visitors are counted once a day
+    and never followed from one day to the next. Bots, prefetches and signed-in
+    admins and reviewers are never counted. Days and hours are Kigali time.
+    """
+    __tablename__ = "page_views"
+
+    id = db.Column(db.Integer, primary_key=True)
+    day = db.Column(db.Date, nullable=False, index=True)
+    hour = db.Column(db.SmallInteger, nullable=False)
+    path = db.Column(db.String(40), nullable=False)
+    visitor = db.Column(db.String(16), nullable=False, index=True)
+    country = db.Column(db.String(2), nullable=True)     # from Cloudflare's CF-IPCountry
+    device = db.Column(db.String(8), nullable=True)      # mobile, tablet or desktop
+    language = db.Column(db.String(8), nullable=True)    # the browser's first language
+    referrer = db.Column(db.String(80), nullable=True)   # site or utm_source; None = direct
+
+    def __repr__(self):
+        return f"<PageView: {self.day} {self.path}>"
 
 
 class Admin(UserMixin, db.Model):

@@ -15,16 +15,18 @@ Security features:
 """
 
 import os
+import io
 import csv
 import hashlib
 import sqlite3
+from collections import Counter
 from datetime import datetime, timezone, timedelta
 from functools import wraps
 from urllib.parse import urlparse
 from markupsafe import Markup
 from flask import (
     Flask, render_template, request, redirect,
-    url_for, flash, jsonify, abort, session
+    url_for, flash, jsonify, abort, session, Response, current_app
 )
 from flask_login import (
     LoginManager, login_user, logout_user,
@@ -34,7 +36,7 @@ from flask_wtf.csrf import CSRFProtect
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from config import Config
-from models import db, Term, TermReview, Suggestion, SearchLog, Admin, Reviewer
+from models import db, Term, TermReview, Suggestion, SearchLog, Admin, Reviewer, PageView
 from sqlalchemy import func
 
 
@@ -885,6 +887,190 @@ def _local_date(dt):
     return _naive_utc(dt).replace(tzinfo=timezone.utc).astimezone(_review_tz()).date()
 
 
+# ---------------------------------------------------------------------------
+# Visitor counting: first party, anonymous, no cookies
+# ---------------------------------------------------------------------------
+# Only the public pages are counted; searches are logged separately.
+COUNTED_PAGES = {"index": "/", "about": "/about", "suggest": "/suggest"}
+# Lower-case fragments of user agents that are not people reading the site:
+# crawlers, link previews (WhatsApp, Slack, LinkedIn...), monitors, scripts.
+BOT_MARKERS = (
+    "bot", "crawl", "spider", "slurp", "preview", "facebookexternalhit",
+    "whatsapp/", "linkedinbot", "embedly", "monitor", "uptime", "pingdom",
+    "headless", "lighthouse", "curl/", "wget/", "python-", "httpx",
+    "go-http-client", "okhttp", "java/", "libwww", "scrapy", "node-fetch",
+    "axios/",
+)
+COUNTRY_NAMES = {
+    "RW": "Rwanda", "US": "United States", "CA": "Canada", "UG": "Uganda",
+    "KE": "Kenya", "TZ": "Tanzania", "BI": "Burundi", "CD": "DR Congo",
+    "ET": "Ethiopia", "NG": "Nigeria", "GH": "Ghana", "ZA": "South Africa",
+    "FR": "France", "BE": "Belgium", "GB": "United Kingdom", "DE": "Germany",
+    "NL": "Netherlands", "CH": "Switzerland", "SE": "Sweden", "IN": "India",
+}
+LANGUAGE_NAMES = {
+    "rw": "Kinyarwanda", "en": "English", "fr": "French", "sw": "Swahili",
+    "es": "Spanish", "pt": "Portuguese", "de": "German", "nl": "Dutch",
+    "lg": "Luganda", "rn": "Kirundi", "ar": "Arabic", "zh": "Chinese",
+}
+
+
+def _client_ip(req):
+    """The visitor's address: Cloudflare's header first, then the proxy chain."""
+    ip = (req.headers.get("CF-Connecting-IP") or "").strip()
+    if not ip:
+        forwarded = req.headers.get("X-Forwarded-For", "")
+        ip = forwarded.split(",")[0].strip() if forwarded else ""
+    return ip or (req.remote_addr or "")
+
+
+def _looks_like_bot(user_agent):
+    ua = (user_agent or "").lower()
+    return not ua or any(marker in ua for marker in BOT_MARKERS)
+
+
+def _is_prefetch(req):
+    purpose = (req.headers.get("Sec-Purpose") or req.headers.get("Purpose")
+               or req.headers.get("X-Moz") or "").lower()
+    return "prefetch" in purpose or "prerender" in purpose
+
+
+def visitor_code(ip, user_agent, day, secret):
+    """Anonymous code for one browser on one day. Never stored with the IP."""
+    raw = f"{secret}|{day.isoformat()}|{ip}|{user_agent or ''}".encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()[:16]
+
+
+def _device(user_agent):
+    ua = user_agent or ""
+    if "iPad" in ua or "Tablet" in ua or ("Android" in ua and "Mobi" not in ua):
+        return "tablet"
+    return "mobile" if "Mobi" in ua else "desktop"
+
+
+def _language(accept_language):
+    first = (accept_language or "").split(",")[0].split(";")[0].strip()
+    code = first.split("-")[0].lower()
+    return code if code.isalpha() and 2 <= len(code) <= 3 else None
+
+
+def _referrer(req):
+    """Where the visit came from: utm_source if the link had one, else the
+    referring site's host; None for direct visits and the site's own pages."""
+    source = (req.args.get("utm_source") or "").strip().lower()
+    if source:
+        return source[:80]
+    host = (urlparse(req.referrer or "").hostname or "").lower()
+    if not host or host == (req.host or "").split(":")[0].lower():
+        return None
+    host = host[4:] if host.startswith("www.") else host
+    return None if host.endswith("linguamedica.rw") else host[:80]
+
+
+def request_visitor_code(req):
+    """The current request's visitor code, or None for signed-in users."""
+    if current_user.is_authenticated:
+        return None
+    today = datetime.now(_review_tz()).date()
+    return visitor_code(_client_ip(req), req.headers.get("User-Agent", ""), today,
+                        current_app.config.get("SECRET_KEY", ""))
+
+
+def migrate_add_search_visitor_column(app):
+    """Add search_logs.visitor (nullable). Idempotent; safe on every startup."""
+    db_uri = app.config['SQLALCHEMY_DATABASE_URI']
+    if db_uri.startswith('postgresql'):
+        _pg_add_columns_if_missing("search_logs", [("visitor", "VARCHAR(16)")])
+        return
+    if not db_uri.startswith('sqlite'):
+        return
+    db_path = db_uri.replace('sqlite:///', '')
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA table_info(search_logs)")
+    existing = {row[1] for row in cursor.fetchall()}
+    if existing and "visitor" not in existing:
+        cursor.execute("ALTER TABLE search_logs ADD COLUMN visitor VARCHAR(16)")
+    conn.commit()
+    conn.close()
+
+
+def visitor_stats(days=30):
+    """Everything the dashboard's Visitors section shows, from page_views and
+    search_logs. A visitor code never repeats across days, so the distinct
+    codes over a period are the sum of each day's visitors (visitor-days)."""
+    today = datetime.now(_review_tz()).date()
+    start = today - timedelta(days=days - 1)
+    first_day = db.session.query(func.min(PageView.day)).scalar()
+    rows = PageView.query.filter(PageView.day >= start).all()
+
+    def summary(since):
+        picked = [r for r in rows if r.day >= since]
+        return {"visitors": len({r.visitor for r in picked}), "views": len(picked)}
+
+    per_day = {}
+    for r in rows:
+        per_day.setdefault(r.day, set()).add(r.visitor)
+    series = [(start + timedelta(days=i), len(per_day.get(start + timedelta(days=i), ())))
+              for i in range(days)]
+    peak = max([n for _, n in series] + [1])
+
+    first_seen = {}
+    for r in sorted(rows, key=lambda r: (r.day, r.hour, r.id)):
+        first_seen.setdefault(r.visitor, r)
+    visitors = list(first_seen.values())
+
+    def share(attribute, names=None, blank="unknown"):
+        counts = Counter((getattr(v, attribute) or blank) for v in visitors)
+        total = sum(counts.values()) or 1
+        return [((names or {}).get(key, key), n, round(100 * n / total))
+                for key, n in counts.most_common(8)]
+
+    # Searches: the only record that reaches back to launch.
+    first_search = db.session.query(func.min(SearchLog.searched_at)).scalar()
+    by_month = Counter()
+    for (when,) in db.session.query(SearchLog.searched_at).all():
+        if when is not None:
+            local = _local_date(when)
+            by_month[(local.year, local.month)] += 1
+    months = []
+    if by_month:
+        year, month = min(by_month)
+        while (year, month) <= (today.year, today.month):
+            months.append((datetime(year, month, 1).strftime("%b %Y"), by_month[(year, month)]))
+            year, month = (year + 1, 1) if month == 12 else (year, month + 1)
+    month_peak = max([n for _, n in months] + [1])
+    start_utc = _local_day_start_utc(days - 1)
+    recent = SearchLog.query.filter(SearchLog.searched_at >= start_utc)
+    searches_30 = recent.count()
+    empty_30 = recent.filter(SearchLog.results_count == 0).count()
+    # Only searches logged since visitors were counted carry a code; until
+    # there are some, the share is left out rather than shown as 0%.
+    searching = {v for (v,) in recent.filter(SearchLog.visitor.isnot(None))
+                 .with_entities(SearchLog.visitor).all()}
+    month_visitors = summary(start)["visitors"]
+
+    return {
+        "first_day": first_day,
+        "today": summary(today),
+        "week": summary(today - timedelta(days=6)),
+        "month": summary(start),
+        "series": series, "peak": peak, "days": days,
+        "countries": share("country", COUNTRY_NAMES),
+        "referrers": share("referrer", blank="direct or shared link"),
+        "devices": share("device"),
+        "languages": share("language", LANGUAGE_NAMES),
+        "pages": Counter(r.path for r in rows).most_common(),
+        "first_search": first_search,
+        "search_months": months, "month_peak": month_peak,
+        "searches_30": searches_30,
+        "empty_share_30": round(100 * empty_30 / searches_30) if searches_30 else None,
+        "searching_share_30": (round(100 * len(searching & {r.visitor for r in rows})
+                                     / month_visitors)
+                               if month_visitors and searching else None),
+    }
+
+
 def reviewer_progress(reviewer, days=14):
     """Counts for one reviewer: distinct terms scored, scored today, scored in
     the last seven days, latest activity, and a per-day series for the last
@@ -1145,6 +1331,35 @@ def create_app(config_overrides=None):
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         return response
 
+    @app.after_request
+    def count_page_view(response):
+        """Count a person reading a public page (see PageView). Never lets a
+        counting problem reach the visitor: any error is logged and dropped."""
+        try:
+            path = COUNTED_PAGES.get(request.endpoint)
+            if (path is None or request.method != "GET" or response.status_code != 200
+                    or response.mimetype != "text/html" or _is_prefetch(request)
+                    or _looks_like_bot(request.headers.get("User-Agent"))
+                    or current_user.is_authenticated):
+                return response
+            now = datetime.now(_review_tz())
+            country = (request.headers.get("CF-IPCountry") or "").strip().upper()
+            db.session.add(PageView(
+                day=now.date(),
+                hour=now.hour,
+                path=path,
+                visitor=request_visitor_code(request),
+                country=country if len(country) == 2 and country not in ("XX", "T1") else None,
+                device=_device(request.headers.get("User-Agent")),
+                language=_language(request.headers.get("Accept-Language")),
+                referrer=_referrer(request),
+            ))
+            db.session.commit()
+        except Exception as exc:
+            db.session.rollback()
+            app.logger.warning("page view not counted: %s", exc)
+        return response
+
     @app.errorhandler(429)
     def ratelimit_handler(e):
         # API endpoints get a JSON 429; everything else gets the friendly page
@@ -1169,6 +1384,9 @@ def create_app(config_overrides=None):
         migrate_add_corpus_columns(app)
         # Before any ORM query on Reviewer, _seed_reviewers() included.
         migrate_add_reviewer_password_columns(app)
+        # page_views is new, so create_all() above makes it; search_logs is
+        # old and gains its visitor column here.
+        migrate_add_search_visitor_column(app)
         migrate_split_compound_entries(app)
         migrate_split_two_concept_entries(app)
         migrate_fix_contributor_attribution(app)
@@ -1283,7 +1501,9 @@ def create_app(config_overrides=None):
         log = SearchLog(
             query_text=query,
             results_count=len(results),
-            source="api"
+            source="api",
+            visitor=None if _looks_like_bot(request.headers.get("User-Agent"))
+            else request_visitor_code(request),
         )
         db.session.add(log)
         db.session.commit()
@@ -1307,7 +1527,8 @@ def create_app(config_overrides=None):
         log = SearchLog(
             query_text=query,
             results_count=int(results_count),
-            source="web"
+            source="web",
+            visitor=request_visitor_code(request),
         )
         db.session.add(log)
         db.session.commit()
@@ -1409,6 +1630,7 @@ def create_app(config_overrides=None):
             review_phase=app.config["REVIEW_PHASE"],
             pending_count=len(active_suggestions),
             suggestions=active_suggestions,
+            visitors=visitor_stats(),
             suggestion_info=matches,
             in_dictionary_count=sum(1 for m in matches.values() if m["all_public"]),
             resolved_suggestions=resolved_suggestions,
@@ -1609,6 +1831,44 @@ def create_app(config_overrides=None):
         "reject": "rejected",
         "restore": "restored to the active list",
     }
+
+    def _csv_download(filename, header, rows):
+        def safe(cell):
+            # A cell that starts like a formula is opened as text, not run.
+            text = "" if cell is None else str(cell)
+            return "'" + text if text[:1] in ("=", "+", "-", "@") else cell
+        buffer = io.StringIO()
+        writer = csv.writer(buffer)
+        writer.writerow(header)
+        writer.writerows([safe(c) for c in row] for row in rows)
+        return Response(buffer.getvalue(), mimetype="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+    @app.route("/admin/analytics/page-views.csv")
+    @admin_required
+    def admin_page_views_csv():
+        """Every counted page view, for analysis elsewhere. Anonymous by design."""
+        rows = PageView.query.order_by(PageView.day, PageView.hour, PageView.id).all()
+        return _csv_download(
+            f"linguamedica-page-views-{datetime.now(_review_tz()).date()}.csv",
+            ["day", "hour_kigali", "page", "visitor_of_the_day", "country",
+             "device", "browser_language", "came_from"],
+            [(r.day.isoformat(), r.hour, r.path, r.visitor, r.country or "",
+              r.device or "", r.language or "", r.referrer or "") for r in rows])
+
+    @app.route("/admin/analytics/searches.csv")
+    @admin_required
+    def admin_searches_csv():
+        """Every logged search since launch, with the visitor code where known."""
+        rows = SearchLog.query.order_by(SearchLog.searched_at, SearchLog.id).all()
+        return _csv_download(
+            f"linguamedica-searches-{datetime.now(_review_tz()).date()}.csv",
+            ["day", "hour_kigali", "query", "results", "source", "visitor_of_the_day"],
+            [((_local_date(r.searched_at).isoformat() if r.searched_at else ""),
+              (_naive_utc(r.searched_at).replace(tzinfo=timezone.utc)
+               .astimezone(_review_tz()).hour if r.searched_at else ""),
+              r.query_text, r.results_count, r.source or "", r.visitor or "")
+             for r in rows])
 
     @app.route("/admin/suggestions/bulk", methods=["POST"])
     @admin_required

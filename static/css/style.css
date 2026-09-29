@@ -1489,3 +1489,74 @@ textarea.form-input {
     opacity: 0.45;
     cursor: not-allowed;
 }
+
+/* --- Visitors --- */
+.visitor-days {
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: 64px;
+    margin: 1rem 0 0.25rem;
+}
+
+.visitor-day {
+    flex: 1;
+    min-width: 4px;
+    background: var(--color-primary);
+    opacity: 0.8;
+    border-radius: 2px 2px 0 0;
+}
+
+.visitor-breakdowns {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1rem;
+    margin: 1rem 0 0.5rem;
+}
+
+.visitor-breakdowns h3 {
+    font-size: 0.85rem;
+    margin-bottom: 0.4rem;
+    color: var(--color-text-secondary);
+}
+
+.admin-table-compact td {
+    padding: 0.3rem 0.5rem;
+    font-size: 0.85rem;
+}
+
+.admin-table-compact .num {
+    text-align: right;
+    white-space: nowrap;
+}
+
+.search-months {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.5rem;
+    overflow-x: auto;
+    padding: 0.5rem 0;
+}
+
+.search-month {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 34px;
+    font-size: 0.75rem;
+}
+
+.search-month-bar {
+    width: 22px;
+    background: var(--color-info);
+    border-radius: 2px 2px 0 0;
+}
+
+.search-month-count {
+    font-weight: 600;
+    margin-top: 0.2rem;
+}
+
+.search-month-label {
+    color: var(--color-text-muted);
+}
