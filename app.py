@@ -1965,7 +1965,9 @@ def create_app(config_overrides=None):
         remaining: eligible terms with no blind score from this reviewer yet.
         ordered_next: remaining, in a randomised order that is stable for
                   this reviewer (hash of code + id), with terms they chose
-                  to skip pushed to the end.
+                  to skip pushed to the end, in the order they skipped them.
+                  A term skipped again goes to the back of that line, so
+                  Skip keeps moving even when every term left was skipped.
         """
         author_name = REVIEWER_NAMES.get(reviewer.code)
         scored_ids = {
@@ -1981,9 +1983,11 @@ def create_app(config_overrides=None):
         eligible.sort(key=lambda t: hashlib.sha256(
             f"{reviewer.code}:{t.id}".encode()).hexdigest())
         remaining = [t for t in eligible if t.id not in scored_ids]
-        skipped = set(session.get("review_skipped", []))
-        ordered_next = ([t for t in remaining if t.id not in skipped]
-                        + [t for t in remaining if t.id in skipped])
+        # Position in the skip list = when it was last skipped (oldest first).
+        skip_rank = {tid: n for n, tid in enumerate(session.get("review_skipped", []))}
+        ordered_next = ([t for t in remaining if t.id not in skip_rank]
+                        + sorted((t for t in remaining if t.id in skip_rank),
+                                 key=lambda t: skip_rank[t.id]))
         return eligible, remaining, ordered_next
 
     def _reviewer_may_score(reviewer, term):
@@ -2197,10 +2201,14 @@ def create_app(config_overrides=None):
     @reviewer_required
     def review_skip(term_id):
         term = db.get_or_404(Term, term_id)
-        skipped = session.get("review_skipped", [])
-        if term.id not in skipped:
-            skipped.append(term.id)
-            session["review_skipped"] = skipped
+        # Skipping again moves the term to the back of the skipped ones.
+        skipped = [tid for tid in session.get("review_skipped", []) if tid != term.id]
+        skipped.append(term.id)
+        session["review_skipped"] = skipped
+        _, _, ordered_next = _review_queue_for(_actual_user())
+        if ordered_next and ordered_next[0].id == term.id:
+            flash("This is the only term left in your queue, so there is nothing "
+                  "to skip to. Score it whenever you are ready.", "info")
         return redirect(url_for("review_queue"))
 
     @app.route("/review/history")
