@@ -60,7 +60,7 @@
                 <label class="score-choice"><input type="radio" name="score" value="2" id="score2"><span>2 · Partially correct, meaning incomplete</span></label>
                 <label class="score-choice"><input type="radio" name="score" value="1" id="score1"><span>1 · Incorrect or misleading</span></label>
             </div>
-            <p class="label-hint" style="margin-top: 0.5rem;">Choose a score, then press Save. Nothing is stored until you do, and anything typed above is saved with it.</p>
+            <p class="label-hint" style="margin-top: 0.5rem;">Choose a score, then press Save. Nothing is stored until you do, and anything typed above is saved with it. If you hesitate between two scores, give the lower one and say why in the comment.</p>
         </div>
 
         {% if previous %}
@@ -96,8 +96,9 @@
     <div id="quickRef" style="display: none;">
         <p><strong>4</strong> Fully correct and idiomatic. Publish as is.</p>
         <p><strong>3</strong> Correct meaning, with a minor problem of spelling, phrasing or register. A native speaker reads straight through it.</p>
-        <p><strong>2</strong> Partially correct. Meaning incomplete or distorted, typically a specifier missing.</p>
-        <p><strong>1</strong> Incorrect or misleading. Names the wrong thing with confidence.</p>
+        <p><strong>2</strong> Partially correct. Meaning incomplete, one step too general, or open to being taken for something adjacent; typically a specifier missing.</p>
+        <p><strong>1</strong> Incorrect or misleading. Points to the wrong thing with confidence. A rendering that is right but could be taken for something else is a 2, not a 1.</p>
+        <p class="label-hint">If you hesitate between two scores, give the lower one and say why in the comment. A word new to you is not a reason to lower the score; say so in the comment. Your alternative never changes the score.</p>
         <p class="label-hint">You are always shown one rendering, and that is the one you score. Borrowing is not a failure. You are scoring a headword standing alone, not what a speaker would say in context. Full worked examples are in the guideline.</p>
     </div>
 </section>

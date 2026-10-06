@@ -1,6 +1,23 @@
 # LinguaMedica RW reviewer guideline
 
-Version 1.0, September 2026. Written for the reviewers of the September–October 2026 validation round.
+Version 1.1, October 2026. Written for the reviewers of the September–October 2026 validation round.
+
+Version 1.0 (September 2026) was used for the pilot of 24 terms, scored between 29 September and 5 October 2026. What changed in 1.1: the scale card below was added; one sentence was added under level 1, saying what misleading means there; three rules from How to decide are repeated on the card. No level, no anchor and no example changed, and the pilot scores stand.
+
+## The scale on one screen
+
+Read this before you score your next term. Everything after it explains and illustrates it; nothing after it changes it.
+
+- **4 · Fully correct and idiomatic.** Correct, and how a Rwandan clinician or patient would actually say it. A borrowing can be a 4. A descriptive rendering can be a 4.
+- **3 · Correct meaning, minor issue of form.** The meaning is unmistakable; the fault is in the form: a noun-class agreement, a connective, a spelling, a spacing, a phrase that reads like a definition where a term would do.
+- **2 · Partially correct, meaning incomplete.** Real Kinyarwanda that covers part of the concept: something is left out, or it is one step too general, or a reader could take it for something broader or adjacent.
+- **1 · Incorrect or misleading.** It points to the wrong thing: the wrong condition, organ or drug. Misleading means a convincing wrong answer, not a vague one or one that could be taken for something else; those are 2s.
+
+Three rules that go with the scale:
+
+- If you are unsure between two scores, give the lower one and say why in the comment.
+- A word that is new to you is not a reason to lower the score. Say in the comment that it was new to you, then score the meaning.
+- Your own alternative never changes the score. Score the rendering shown; put yours in the alternative rendering field.
 
 ## What you are doing, and why
 
@@ -23,7 +40,7 @@ For every term the page asks one question: how adequately does the Kinyarwanda r
 
 **2 · Partially correct, meaning incomplete.** The rendering is real Kinyarwanda and covers part of the concept, but something has been left out, or it is one step too general for the English term it stands for. A reader could take it to mean something broader, or something adjacent.
 
-**1 · Incorrect or misleading.** The rendering names the wrong thing. It may be well formed and sound confident; that is what makes it dangerous. A clinician who trusted it would act on the wrong condition, organ, or drug.
+**1 · Incorrect or misleading.** The rendering names the wrong thing. It may be well formed and sound confident; that is what makes it dangerous. A clinician who trusted it would act on the wrong condition, organ, or drug. Misleading here means that the rendering itself points the reader to the wrong thing. A rendering that is right but could be taken for something else is a 2, not a 1; say in the comment what it could be taken for.
 
 The line between a 2 and a 1: a 2 leaves something out; a 1 puts something wrong in.
 
@@ -126,7 +143,7 @@ Then choose one of the four scores. Choosing does not save anything yet: a line 
 
 ## The pilot
 
-The round opens with a pilot of twenty to thirty terms. Score them as you would any others, then tell the editor what was unclear: a level you could not place, a word in this guideline that did not help, a page that behaved oddly. The guideline may be revised after the pilot; the pilot scores stand.
+The round opened with a pilot of 24 terms, scored between 29 September and 5 October 2026 under version 1.0 of this guideline. The pilot scores stand. What version 1.1 changed is stated at the top of this guideline, and none of it changes a level, an anchor or an example. A slip of the button on a pilot term can still be corrected, as described under Changing a score; if instead you find that your reading of a level has shifted, tell the editor rather than rescoring.
 
 ## Terms withheld from the scoring queue
 
