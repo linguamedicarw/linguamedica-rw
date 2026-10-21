@@ -43,6 +43,11 @@ A NOTE ON VERIFICATION STATUS
     yet, so they are never exported here until the editor publishes them.
     Pending user candidates still live in the separate `suggestions` queue.
     So this file is the published store: what the public dictionary shows.
+
+SCHEMA 1.1 (October 2026)
+    Adds variants_en and variants_rw, separated by " / " as in the database. The
+    pipeline (rag/) reads the English variants as retrieval keys beside the
+    headword, and the Kinyarwanda variants only in its checks, never in a prompt.
 """
 
 import csv
@@ -62,13 +67,15 @@ from models import db, Term      # noqa: E402
 DATA_DIR = REPO_ROOT / "data"
 JSON_PATH = DATA_DIR / "terms.json"
 CSV_PATH = DATA_DIR / "terms.csv"
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "1.1"
 
 # Fixed field order - keeps JSON keys and CSV columns stable across runs.
 FIELDS = [
     "id",
     "english",
     "kinyarwanda",
+    "variants_en",
+    "variants_rw",
     "example_en",
     "example_rw",
     "etymology",
@@ -113,6 +120,8 @@ def term_to_row(term):
         "id": term.id,
         "english": term.english,
         "kinyarwanda": term.kinyarwanda,
+        "variants_en": term.variants_en,
+        "variants_rw": term.variants_rw,
         "example_en": term.example_en,
         "example_rw": term.example_rw,
         "etymology": term.etymology,

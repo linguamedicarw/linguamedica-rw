@@ -1,0 +1,8 @@
+{
+  "_about": "The tolerant reading of the matching rule (thesis 4.3.6). Kinyarwanda grammar, written by the editor: the code holds none of its own. While both lists are empty, runs report the strict reading only. Prefixes are noun-class prefixes as they may begin a word, with and without the initial vowel where it can drop (write each form you want stripped). Connectives are the forms a connective takes between two words, elided ones with their apostrophe. Change the version whenever the lists change: every run logs the version and this file's SHA-256.",
+  "version": "unset",
+  "author": "",
+  "noun_class_prefixes": [],
+  "connectives": [],
+  "min_stem_letters": 2
+}
