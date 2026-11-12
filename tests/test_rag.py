@@ -569,3 +569,247 @@ def test_the_real_export_loads():
     assert res.term_count == len(json.loads(path.read_text(encoding="utf-8"))["terms"])
     assert not any("no English key" in n for n in res.notes)
     assert res.max_words >= 1
+
+
+# --- resuming a stopped run, and precision (0.2.0) ---------------------------------
+
+def _five(tmp_path):
+    res_path = tmp_path / "terms.json"
+    res_path.write_text(json.dumps({"schema_version": "1.1", "term_count": 1,
+                                    "terms": [term(1, "Fever", "rw-1")]}), encoding="utf-8")
+    items = tmp_path / "dev5.csv"
+    rows = ["item,sentence,terms"] + [f"D{n},Fever and splenomegaly {n}.,Fever; Splenomegaly"
+                                      for n in range(1, 6)]
+    items.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    return res_path, items
+
+
+class StopsAt(Scripted):
+    """Answers like Scripted, and stops the run at its nth translation prompt."""
+
+    def __init__(self, main, n):
+        super().__init__(main)
+        self.n, self.seen = n, 0
+
+    def generate(self, text):
+        if not text.startswith("How is the medical term"):
+            self.seen += 1
+            if self.seen == self.n:
+                raise RuntimeError("preempted")
+        return super().generate(text)
+
+
+def _quiet():
+    return {"allow_dirty": True, "say": lambda *_: None}
+
+
+def _lines(path):
+    return path.read_text(encoding="utf-8").splitlines()
+
+
+def _saved(run_dir):
+    return json.loads((run_dir / "run.json").read_text(encoding="utf-8"))
+
+
+def test_a_stopped_run_resumes_where_it_stopped(tmp_path):
+    res_path, items = _five(tmp_path)
+    rules, runs = rules_file(tmp_path), tmp_path / "runs"
+    whole, _ = run(items, res_path, runs, rules_path=rules, backbone=Scripted("rw-1 [T1]"),
+                   name="whole", **_quiet())
+    with pytest.raises(RuntimeError, match="preempted"):
+        run(items, res_path, runs, rules_path=rules, backbone=StopsAt("rw-1 [T1]", 3),
+            name="cut", **_quiet())
+    cut = runs / "cut"
+    assert len(_lines(cut / "items.jsonl")) == 2 and _saved(cut)["status"] == "running"
+    said = []
+    run_dir, _ = run(items, res_path, runs, rules_path=rules, backbone=Scripted("rw-1 [T1]"),
+                     name="cut", allow_dirty=True, say=said.append)
+    assert run_dir == cut and any("2 of 5 items already done" in s for s in said)
+    for name in ("items.jsonl", "outputs.tsv"):
+        assert _lines(cut / name) == _lines(whole / name)
+    misses = [json.loads(x)["item"] for x in _lines(cut / "miss_candidates.jsonl")]
+    assert misses == ["D1", "D2", "D3", "D4", "D5"]
+    saved = _saved(cut)
+    assert saved["status"] == "finished" and saved["summary"] == _saved(whole)["summary"]
+    assert [r["items_already_done"] for r in saved["resumed"]] == [2]
+
+
+def test_a_line_cut_mid_write_is_dropped_and_its_item_done_again(tmp_path):
+    res_path, items = _five(tmp_path)
+    rules, runs = rules_file(tmp_path), tmp_path / "runs"
+    whole, _ = run(items, res_path, runs, rules_path=rules, backbone=Scripted("rw-1 [T1]"),
+                   name="whole", **_quiet())
+    hurt, _ = run(items, res_path, runs, rules_path=rules, backbone=Scripted("rw-1 [T1]"),
+                  name="hurt", **_quiet())
+    lines = _lines(hurt / "items.jsonl")
+    (hurt / "items.jsonl").write_text("\n".join(lines[:2]) + "\n" + lines[2][:40],
+                                      encoding="utf-8")
+    misses = _lines(hurt / "miss_candidates.jsonl")       # D3's candidate, D3's record cut
+    (hurt / "miss_candidates.jsonl").write_text("\n".join(misses[:3]) + "\n", encoding="utf-8")
+    saved = _saved(hurt)
+    saved["status"] = "running"
+    (hurt / "run.json").write_text(json.dumps(saved), encoding="utf-8")
+    run(items, res_path, runs, rules_path=rules, backbone=Scripted("rw-1 [T1]"), resume=hurt,
+        **_quiet())
+    assert _lines(hurt / "items.jsonl") == _lines(whole / "items.jsonl")
+    assert _lines(hurt / "outputs.tsv") == _lines(whole / "outputs.tsv")
+    misses = [json.loads(x)["item"] for x in _lines(hurt / "miss_candidates.jsonl")]
+    assert misses == ["D1", "D2", "D3", "D4", "D5"]
+    resumed = _saved(hurt)["resumed"][0]
+    assert resumed["cut_lines_dropped"] is True and resumed["miss_candidates_dropped"] == 1
+    assert not list(hurt.glob("*.tmp"))
+
+
+def test_a_run_resumes_only_with_what_it_started_with(tmp_path):
+    res_path, items = _five(tmp_path)
+    rules, runs = rules_file(tmp_path), tmp_path / "runs"
+    with pytest.raises(RuntimeError):
+        run(items, res_path, runs, rules_path=rules, backbone=StopsAt("rw-1 [T1]", 2),
+            name="cut", **_quiet())
+    with pytest.raises(SystemExit, match="the settings changed"):
+        run(items, res_path, runs, k=3, rules_path=rules, backbone=Scripted("rw-1 [T1]"),
+            name="cut", **_quiet())
+
+    class Other(Scripted):
+        def describe(self):
+            return {"backbone": "scripted", "checkpoint": "another", "precision": "Q4_K_M"}
+
+    with pytest.raises(SystemExit, match="the model changed"):
+        run(items, res_path, runs, rules_path=rules, backbone=Other("rw-1 [T1]"), name="cut",
+            **_quiet())
+    items.write_text(items.read_text(encoding="utf-8") + "D6,Fever six.,Fever\n",
+                     encoding="utf-8")
+    with pytest.raises(SystemExit, match="the items changed"):
+        run(items, res_path, runs, rules_path=rules, backbone=Scripted("rw-1 [T1]"),
+            name="cut", **_quiet())
+    assert len(_lines(runs / "cut" / "items.jsonl")) == 1     # nothing touched
+
+
+def test_a_finished_run_is_not_resumed_and_names_are_plain(tmp_path):
+    res_path, items = _five(tmp_path)
+    runs = tmp_path / "runs"
+    done, _ = run(items, res_path, runs, backbone=Scripted("rw-1 [T1]"), name="done",
+                  **_quiet())
+    for kwargs in ({"resume": done}, {"name": "done"}):
+        with pytest.raises(SystemExit, match="is finished"):
+            run(items, res_path, runs, backbone=Scripted("rw-1 [T1]"), **kwargs, **_quiet())
+    with pytest.raises(SystemExit, match="no run.json"):
+        run(items, res_path, runs, backbone=Scripted("rw-1 [T1]"), resume=tmp_path / "nowhere",
+            **_quiet())
+    with pytest.raises(SystemExit, match="letters, digits"):
+        run(items, res_path, runs, backbone=Scripted("rw-1 [T1]"), name="../out", **_quiet())
+    with pytest.raises(SystemExit, match="not both"):
+        run(items, res_path, runs, backbone=Scripted("rw-1 [T1]"), name="x", resume=done,
+            **_quiet())
+
+
+def test_precision_belongs_to_the_model():
+    from rag.backbones import make
+    for name, model in (("ollama", "gemma3:27b-it-q8_0"), ("echo", None), ("none", None)):
+        with pytest.raises(SystemExit, match="transformers backbone"):
+            make(name, model, dtype="float16")
+    opener, _ = _ollama([{"name": "gemma3:27b-it-q8_0", "model": "gemma3:27b-it-q8_0",
+                          "digest": "q8", "details": {"quantization_level": "Q8_0"}}])
+    d = OllamaBackbone("gemma3:27b-it-q8_0", opener=opener).describe()
+    assert d["precision"] == "Q8_0" and d["checkpoint"] == "gemma3:27b-it-q8_0@q8"
+
+
+# --- stops at the worst moments (found by an independent review, 11 November 2026) ----
+
+def test_a_stop_inside_the_run_json_write_does_not_block_the_next_resume(tmp_path,
+                                                                        monkeypatch):
+    import builtins
+    import io
+    res_path, items = _five(tmp_path)
+    rules, runs = rules_file(tmp_path), tmp_path / "runs"
+    with pytest.raises(RuntimeError):
+        run(items, res_path, runs, rules_path=rules, backbone=StopsAt("rw-1 [T1]", 3),
+            name="cut", **_quiet())
+    real_open = io.open
+
+    def stopped_after_open(file, mode="r", *a, **kw):
+        f = real_open(file, mode, *a, **kw)
+        if "w" in mode and str(file).rsplit("/", 1)[-1].startswith("run.json"):
+            f.close()                            # opened for writing, nothing written yet
+            raise KeyboardInterrupt("SIGTERM from the scheduler")
+        return f
+
+    monkeypatch.setattr(io, "open", stopped_after_open)
+    monkeypatch.setattr(builtins, "open", stopped_after_open)
+    with pytest.raises(KeyboardInterrupt):
+        run(items, res_path, runs, rules_path=rules, backbone=Scripted("rw-1 [T1]"),
+            name="cut", **_quiet())
+    monkeypatch.undo()
+    run_dir, manifest = run(items, res_path, runs, rules_path=rules,
+                            backbone=Scripted("rw-1 [T1]"), name="cut", **_quiet())
+    assert manifest["status"] == "finished" and len(_lines(run_dir / "items.jsonl")) == 5
+
+
+def test_a_line_cut_inside_a_multibyte_character_is_dropped(tmp_path):
+    res_path, items = _five(tmp_path)
+    rules, runs = rules_file(tmp_path), tmp_path / "runs"
+    whole, _ = run(items, res_path, runs, rules_path=rules, backbone=Scripted("rw-1 [T1] ’"),
+                   name="whole", **_quiet())
+    hurt, _ = run(items, res_path, runs, rules_path=rules, backbone=Scripted("rw-1 [T1] ’"),
+                  name="hurt", **_quiet())
+    data = (hurt / "items.jsonl").read_bytes()
+    (hurt / "items.jsonl").write_bytes(data[:data.rindex("’".encode()) + 1])
+    saved = _saved(hurt)
+    saved["status"] = "running"
+    (hurt / "run.json").write_text(json.dumps(saved), encoding="utf-8")
+    run(items, res_path, runs, rules_path=rules, backbone=Scripted("rw-1 [T1] ’"), resume=hurt,
+        **_quiet())
+    assert (hurt / "items.jsonl").read_bytes() == (whole / "items.jsonl").read_bytes()
+
+
+def test_a_name_that_links_into_the_repository_is_refused(tmp_path, monkeypatch):
+    from rag import pipeline
+    fake_repo = tmp_path / "repo"
+    (fake_repo / "inside").mkdir(parents=True)
+    monkeypatch.setattr(pipeline, "REPO_ROOT", fake_repo)
+    res_path, items = _five(tmp_path)
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    (runs / "linked").symlink_to(fake_repo / "inside", target_is_directory=True)
+    with pytest.raises(SystemExit, match="inside the repository"):
+        run(items, res_path, runs, backbone=Scripted("rw-1 [T1]"), name="linked", **_quiet())
+    assert not any((fake_repo / "inside").iterdir())
+
+
+def test_empty_names_are_refused(tmp_path):
+    res_path, items = _five(tmp_path)
+    with pytest.raises(SystemExit, match="letters, digits"):
+        run(items, res_path, tmp_path / "runs", backbone=Scripted("x"), name="", **_quiet())
+    with pytest.raises(SystemExit, match="needs a folder"):
+        run(items, res_path, tmp_path / "runs", backbone=Scripted("x"), resume="", **_quiet())
+    assert not (tmp_path / "runs").exists()
+
+
+def test_a_resumption_stopped_before_it_finished_is_still_recorded(tmp_path, monkeypatch):
+    from rag import pipeline
+    res_path, items = _five(tmp_path)
+    rules, runs = rules_file(tmp_path), tmp_path / "runs"
+    with pytest.raises(RuntimeError):
+        run(items, res_path, runs, rules_path=rules, backbone=StopsAt("rw-1 [T1]", 4),
+            name="cut", **_quiet())
+    log = runs / "cut" / "items.jsonl"
+    log.write_text(log.read_text(encoding="utf-8")[:-200], encoding="utf-8")   # a cut line
+    real_replace = pipeline._replace
+
+    def stop_after_run_json(path, text):
+        real_replace(path, text)
+        if path.name == "run.json":
+            raise KeyboardInterrupt
+    monkeypatch.setattr(pipeline, "_replace", stop_after_run_json)
+    with pytest.raises(KeyboardInterrupt):
+        run(items, res_path, runs, rules_path=rules, backbone=Scripted("rw-1 [T1]"),
+            name="cut", **_quiet())
+    monkeypatch.undo()
+    run(items, res_path, runs, rules_path=rules, backbone=Scripted("rw-1 [T1]"), name="cut",
+        **_quiet())
+    resumed = _saved(runs / "cut")["resumed"]
+    assert len(resumed) == 2 and resumed[0]["cut_lines_dropped"] is True
+
+
+def test_echo_describes_its_precision():
+    assert EchoBackbone().describe()["precision"] is None

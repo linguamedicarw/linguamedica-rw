@@ -10,12 +10,20 @@ output was cut at the maximum and the item needs review).
     none          no model. The run measures the English side (matches, misses, term
                   recall) and writes the prompts: the miss rate before any model runs.
     echo          returns the English sentence unchanged. For testing the plumbing only.
-    ollama        a model served by Ollama on this computer (the 4B model, for building).
-    transformers  a Hugging Face checkpoint (Gemma 3 27B on Hellbender). TranslateGemma
-                  takes --prompt-format gemma-raw: its own chat template accepts only a text
-                  and two language codes, so a prompt with dictionary entries has to be sent
-                  with Gemma's turn markers directly, as its model card describes for custom
-                  prompts.
+    ollama        a model served by Ollama on this computer, for development. The tag sets
+                  the precision: gemma3:27b-it-q8_0 is the 8-bit build of Gemma 3 27B (the
+                  plain gemma3:27b tag is a 4-bit build).
+    transformers  a Hugging Face checkpoint (Gemma 3 27B on Hellbender), at the precision
+                  --dtype names: bfloat16 by default, the setting of every reported run.
+                  TranslateGemma takes --prompt-format gemma-raw: its own chat template
+                  accepts only a text and two language codes, so a prompt with dictionary
+                  entries has to be sent with Gemma's turn markers directly, as its model card
+                  describes for custom prompts.
+
+describe() gives a `precision` for every model: the transformers dtype, or the
+quantization Ollama reports for the tag (Q8_0, Q4_K_M...). Reported results run at 16-bit
+and one precision holds throughout a reported table (Dr. Dastour, 8 November 2026); 8-bit
+is for development, and how far development results carry over is measured, not assumed.
 
 Nothing here trains, fine-tunes or updates a model.
 """
@@ -28,6 +36,7 @@ from dataclasses import asdict, dataclass
 
 BACKBONES = ("none", "echo", "ollama", "transformers")
 PROMPT_FORMATS = ("chat", "gemma-raw")
+DTYPES = ("bfloat16", "float16", "float32")
 
 
 @dataclass(frozen=True)
@@ -74,7 +83,7 @@ class EchoBackbone(Backbone):
         return sentence_of(prompt)
 
     def describe(self):
-        return dict(super().describe(), checkpoint="echo (no model)")
+        return dict(super().describe(), checkpoint="echo (no model)", precision=None)
 
 
 class OllamaBackbone(Backbone):
@@ -123,6 +132,7 @@ class OllamaBackbone(Backbone):
                              f"(ollama pull {self.model}).")
         return dict(super().describe(), model=self.model, host=self.host,
                     checkpoint=f"{match.get('name')}@{match['digest']}",
+                    precision=(match.get("details") or {}).get("quantization_level"),
                     details=match.get("details"),
                     ollama_version=self._call("/api/version").get("version"))
 
@@ -136,6 +146,8 @@ class TransformersBackbone(Backbone):
         super().__init__(decoding)
         if prompt_format not in PROMPT_FORMATS:
             raise SystemExit(f"--prompt-format must be one of {', '.join(PROMPT_FORMATS)}")
+        if dtype not in DTYPES:
+            raise SystemExit(f"--dtype must be one of {', '.join(DTYPES)}")
         try:
             import torch
             import transformers
@@ -192,6 +204,7 @@ class TransformersBackbone(Backbone):
         commit = getattr(self.model.config, "_commit_hash", None)
         info = dict(super().describe(), model=self.model_id, revision_requested=self.revision,
                     checkpoint=f"{self.model_id}@{commit}", dtype=self.dtype,
+                    precision=self.dtype,
                     device=str(self.model.device), transformers=self.transformers.__version__,
                     torch=self.torch.__version__,
                     generation_config=self.model.generation_config.to_dict())
@@ -201,8 +214,12 @@ class TransformersBackbone(Backbone):
         return info
 
 
-def make(name, model=None, decoding=Decoding(), prompt_format="chat", revision=None):
+def make(name, model=None, decoding=Decoding(), prompt_format="chat", revision=None,
+         dtype=None):
     """The backbone a run asked for; None for 'none'."""
+    if dtype is not None and name != "transformers":
+        raise SystemExit("--dtype is for the transformers backbone. With Ollama the model tag "
+                         "sets the precision (gemma3:27b-it-q8_0 is the 8-bit build).")
     if name == "none":
         return None
     if name == "echo":
@@ -216,7 +233,8 @@ def make(name, model=None, decoding=Decoding(), prompt_format="chat", revision=N
                              "Ollama applies the model's own chat template.")
         return OllamaBackbone(model, decoding)
     if name == "transformers":
-        return TransformersBackbone(model, decoding, prompt_format, revision)
+        return TransformersBackbone(model, decoding, prompt_format, revision,
+                                    dtype=dtype or "bfloat16")
     raise SystemExit(f"--backbone must be one of {', '.join(BACKBONES)}")
 
 

@@ -7,18 +7,23 @@ The command line. From the repository root, with the venv active:
     python -m rag run --items DEV.csv
         the English side only (no model): matches, misses, term recall, and the prompts
 
-    python -m rag run --items DEV.csv --backbone ollama --model gemma3:4b
-        the 4B model on this computer, through Ollama
+    python -m rag run --items DEV.csv --backbone ollama --model gemma3:27b-it-q8_0
+        Gemma 3 27B at 8-bit on this computer, through Ollama (development)
 
     python -m rag run --items DEV.csv --backbone transformers --model google/gemma-3-27b-it
-        a Hugging Face checkpoint (Hellbender). TranslateGemma: add --prompt-format gemma-raw
+        a Hugging Face checkpoint at 16-bit (Hellbender). TranslateGemma: add
+        --prompt-format gemma-raw
 
 Options for run: --k 1|3|5|all (candidates kept per matched span, default 1), --arm
 base|example (the example sentence in the prompt or not), --resource (default
 data/terms.json), --rules (default rag/matching_rules.json), --max-new-tokens, --seed,
 --context-tokens (Ollama's context window), --revision (a checkpoint's exact commit),
---out (default ~/LinguaMedica-runs), --limit, --allow-dirty (run with uncommitted
-changes; the run is marked not reproducible).
+--dtype bfloat16|float16|float32 (the transformers backbone's precision, default
+bfloat16; with Ollama the model tag sets it), --out (default ~/LinguaMedica-runs),
+--name NAME (a fixed folder name under --out; the same name again continues an
+unfinished run, which is how a requeued cluster job picks up where it stopped),
+--resume FOLDER (continue an unfinished run), --limit, --allow-dirty (run with
+uncommitted changes; the run is marked not reproducible).
 
 rag/examples/smoke_items.csv holds five English sentences around published terms, for
 trying the plumbing. They are not development items.
@@ -27,7 +32,7 @@ trying the plumbing. They are not development items.
 import argparse
 import sys
 
-from .backbones import BACKBONES, PROMPT_FORMATS, Decoding
+from .backbones import BACKBONES, DTYPES, PROMPT_FORMATS, Decoding
 from .pipeline import DEFAULT_OUT, DEFAULT_RESOURCE, run
 from .prompt import ARMS
 from .resource import Resource
@@ -68,7 +73,10 @@ def main(argv=None):
     r.add_argument("--allow-dirty", action="store_true")
     r.add_argument("--prompt-format", choices=PROMPT_FORMATS, default="chat")
     r.add_argument("--revision")
+    r.add_argument("--dtype", choices=DTYPES)
     r.add_argument("--out", default=str(DEFAULT_OUT))
+    r.add_argument("--name")
+    r.add_argument("--resume")
     r.add_argument("--limit", type=int)
     args = parser.parse_args(argv)
 
@@ -88,7 +96,8 @@ def main(argv=None):
                         context_tokens=args.context_tokens)
     run(args.items, args.resource, args.out, args.backbone, args.model, args.k, args.arm,
         args.rules, decoding, args.prompt_format, args.revision, args.limit,
-        argv=["python -m rag", *argv], allow_dirty=args.allow_dirty)
+        argv=["python -m rag", *argv], allow_dirty=args.allow_dirty, dtype=args.dtype,
+        name=args.name, resume=args.resume)
     return 0
 
 

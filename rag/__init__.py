@@ -25,6 +25,9 @@ What the code holds to, from the design memo:
 - The test set stays away from every system until it is frozen (items.py refuses it).
 - A run that could not be regenerated from its log (uncommitted code, a resource
   outside the repository) does not start, unless --allow-dirty marks it so.
+- A run stopped part-way continues in its own folder (--resume, or the same --name),
+  only with the same items, resource, settings, prompt, rules, code and model.
+- Reported results run at 16-bit; 8-bit is for development (0.2.0).
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

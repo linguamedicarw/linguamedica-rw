@@ -21,6 +21,14 @@ the resource and the matching rules are committed and unchanged (git status clea
 rag/, data/ and scripts/export_terms.py) and the resource is the repository's own file.
 --allow-dirty runs anyway and marks the run `reproducible: false`, for trying things.
 
+A run that stops part-way (a preempted job on a shared cluster, a lost connection)
+continues in the same folder: --resume FOLDER, or the same --name again. Every item is
+flushed to disk as soon as it is done, so a stop costs at most the item in progress. On
+resuming, the items already written are kept, a line cut mid-write is dropped and its item
+done again, and the run refuses to continue if the items, resource, settings, prompt,
+matching rules, code or model (checkpoint, precision, decoding, library versions) differ
+from the ones it started with. run.json records each resumption.
+
 Item statuses: ok; needs_review (a placeholder lost or repeated, or the output cut at the
 maximum length); unchecked (generated, but the item is not annotated, so a medical term
 the resource does not hold may stand in the output in the model's words); skipped (a
@@ -30,6 +38,7 @@ missed term could not be hidden from the model, so nothing was sent); not_genera
 
 import csv
 import hashlib
+import io
 import json
 import os
 import re
@@ -88,10 +97,16 @@ def file_git(path):
 
 
 def code_sha256():
-    """One SHA-256 over every file of the package, by name and bytes."""
+    """
+    One SHA-256 over every file of the package, by name and bytes. Hidden files (a
+    .DS_Store that Finder leaves, .gitkeep) and __pycache__ are left out, so the same
+    committed code gives the same hash on the Mac and on the cluster.
+    """
+    package = Path(__file__).parent
     h = hashlib.sha256()
-    for p in sorted(Path(__file__).parent.rglob("*")):
-        if p.is_file() and "__pycache__" not in p.parts:
+    for p in sorted(package.rglob("*")):
+        parts = p.relative_to(package).parts
+        if p.is_file() and "__pycache__" not in parts and not any(x.startswith(".") for x in parts):
             h.update(str(p.relative_to(REPO_ROOT)).encode("utf-8") + b"\0" + p.read_bytes() + b"\0")
     return h.hexdigest()
 
@@ -279,9 +294,126 @@ def _run_dir(out, backbone_name, model, k, arm):
     raise SystemExit(f"Could not make a new run folder under {root}")
 
 
+_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,120}")
+
+
+def _named_dir(out, name):
+    """(out/NAME, True when it already holds a run to continue)."""
+    if not _NAME.fullmatch(name or ""):
+        raise SystemExit("--name takes letters, digits, '.', '_' and '-' only, starting with a "
+                         "letter or a digit (no slashes)")
+    path = outside_repo(out) / name
+    outside_repo(path)
+    if (path / "run.json").exists():
+        return path, True
+    if path.exists() and any(p.suffix != ".tmp" for p in path.iterdir()):
+        raise SystemExit(f"{path} is not empty and holds no run.json, so it is not a run "
+                         "folder. Choose another --name.")
+    path.mkdir(parents=True, exist_ok=True)
+    return path, False
+
+
 def _write_json(path, data):
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2, default=str) + "\n",
-                    encoding="utf-8")
+    _replace(path, json.dumps(data, ensure_ascii=False, indent=2, default=str) + "\n")
+
+
+# What a model contributes to an output: a run continues only if none of it has changed.
+_BACKBONE_IDENTITY = ("backbone", "model", "checkpoint", "precision", "dtype", "prompt_format",
+                      "decoding", "revision_requested", "transformers", "torch",
+                      "ollama_version")
+
+
+def _identity(manifest):
+    """What must be the same when a run continues as when it started."""
+    m = json.loads(json.dumps(manifest, default=str))     # tuples and lists alike
+    b, code = m.get("backbone") or {}, m.get("code") or {}
+    items, rules = m.get("items") or {}, m.get("matching_rules") or {}
+    return {
+        "items": {k: items.get(k) for k in ("sha256", "count", "limit")},
+        "resource": (m.get("resource") or {}).get("sha256"),
+        "settings": m.get("settings"),
+        "prompt": m.get("prompt"),
+        "matching rules": {k: rules.get(k) for k in ("version", "sha256")},
+        "code": code.get("sha256"),
+        "python": code.get("python"),
+        "model": {k: b.get(k) for k in _BACKBONE_IDENTITY},
+    }
+
+
+def _complete_lines(path):
+    """The JSON objects on a file's complete lines; True when a cut line was dropped."""
+    if not path.exists():
+        return [], False
+    *lines, tail = path.read_bytes().split(b"\n")
+    out = []
+    for raw in lines:
+        try:
+            out.append(json.loads(raw.decode("utf-8")))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return out, True
+    return out, bool(tail)
+
+
+def _replace(path, text):
+    """Write a file whole, by a rename, so a stop never leaves it half written."""
+    tmp = path.with_name(path.name + ".tmp")
+    with open(tmp, "w", encoding="utf-8", newline="") as f:
+        f.write(text)
+    os.replace(tmp, path)
+
+
+def _jsonl(objects):
+    return "".join(json.dumps(o, ensure_ascii=False, default=str) + "\n" for o in objects)
+
+
+def _outputs_text(records):
+    buf = io.StringIO()
+    table = csv.writer(buf, delimiter="\t", lineterminator="\n")
+    table.writerow(["item", "status", "output"])
+    for r in records:
+        table.writerow([r["id"], r["status"], r["output"] or ""])
+    return buf.getvalue()
+
+
+def _continue(run_dir, fresh, items, argv):
+    """(the saved run.json updated for its continuation, the records already done)."""
+    saved = json.loads((run_dir / "run.json").read_text(encoding="utf-8"))
+    if saved.get("status") == "finished":
+        raise SystemExit(f"{run_dir.name} is finished; there is nothing to resume. Start a "
+                         "new run (another --name) to run it again.")
+    before, now = _identity(saved), _identity(fresh)
+    changed = [k for k in now if before.get(k) != now[k]]
+    if changed:
+        raise SystemExit(f"Not resuming {run_dir.name}: the {', '.join(changed)} changed since "
+                         "it started. A run continues only with the same items, resource, "
+                         "settings, prompt, matching rules, code and model; start a new run.")
+    records, cut_items = _complete_lines(run_dir / "items.jsonl")
+    ids = [r.get("id") for r in records]
+    if ids != [item.id for item in items[:len(ids)]]:
+        raise SystemExit(f"Not resuming {run_dir.name}: its items.jsonl does not follow the "
+                         "order of the items file.")
+    candidates, cut_misses = _complete_lines(run_dir / "miss_candidates.jsonl")
+    done = set(ids)
+    kept = [c for c in candidates if c.get("item") in done]   # an item done again asks again
+    saved["status"] = "running"
+    saved.setdefault("resumed", []).append({
+        "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "command": " ".join(argv) if argv else None,
+        "items_already_done": len(records),
+        "cut_lines_dropped": cut_items or cut_misses,
+        "miss_candidates_dropped": len(candidates) - len(kept),
+        "repository": fresh["code"]["repository"],
+        "not_reproducible_because": fresh["not_reproducible_because"],
+    })
+    if fresh["not_reproducible_because"]:
+        saved["reproducible"] = False
+        saved["not_reproducible_because"] = sorted(set(saved.get("not_reproducible_because")
+                                                       or []) | set(fresh["not_reproducible_because"]))
+    _write_json(run_dir / "run.json", saved)
+    _replace(run_dir / "items.jsonl", _jsonl(records))
+    _replace(run_dir / "miss_candidates.jsonl", _jsonl(kept))
+    _replace(run_dir / "outputs.tsv", _outputs_text(records))
+    return saved, records
 
 
 def _reproducible(repo, resource, rules):
@@ -300,8 +432,12 @@ def _reproducible(repo, resource, rules):
 def run(items_path, resource_path=DEFAULT_RESOURCE, out=DEFAULT_OUT, backbone_name="none",
         model=None, k=1, arm="base", rules_path=None, decoding=Decoding(),
         prompt_format="chat", revision=None, limit=None, argv=None, backbone=None,
-        allow_dirty=False, say=print):
-    """Run the pipeline over an items file; returns (run folder, run.json as a dict)."""
+        allow_dirty=False, say=print, dtype=None, name=None, resume=None):
+    """
+    Run the pipeline over an items file; returns (run folder, run.json as a dict).
+    name: a fixed folder name under `out` (the same name again continues an unfinished
+    run); resume: the folder of an unfinished run to continue.
+    """
     items = read_items(items_path)                                            # (1)
     if limit:
         items = items[:limit]
@@ -309,6 +445,12 @@ def run(items_path, resource_path=DEFAULT_RESOURCE, out=DEFAULT_OUT, backbone_na
     rules = checks.load_rules(rules_path)
     if arm not in prompt.ARMS:
         raise SystemExit(f"--arm must be one of {', '.join(prompt.ARMS)}")
+    if name is not None and resume is not None:
+        raise SystemExit("Use --name or --resume, not both.")
+    if resume is not None and not str(resume).strip():
+        raise SystemExit("--resume needs a folder")
+    if resume is not None and not (Path(resume).expanduser() / "run.json").exists():
+        raise SystemExit(f"{resume} holds no run.json: there is no run there to resume.")
     repo = repo_state()
     reasons = _reproducible(repo, resource, rules)
     if reasons and not allow_dirty:
@@ -316,11 +458,17 @@ def run(items_path, resource_path=DEFAULT_RESOURCE, out=DEFAULT_OUT, backbone_na
                          + "; ".join(reasons) + ". Commit first, or add --allow-dirty to try "
                          "things (the run is then marked reproducible: false).")
     if backbone is None:
-        backbone = make(backbone_name, model, decoding, prompt_format, revision)
+        backbone = make(backbone_name, model, decoding, prompt_format, revision, dtype)
     else:
         backbone_name = backbone.name
     described = backbone.describe() if backbone else {"backbone": "none"}
-    run_dir = _run_dir(out, backbone_name, model, k, arm)
+    continuing = False
+    if resume is not None:
+        run_dir, continuing = outside_repo(resume), True
+    elif name is not None:
+        run_dir, continuing = _named_dir(out, name)
+    else:
+        run_dir = _run_dir(out, backbone_name, model, k, arm)
 
     manifest = {
         "run": run_dir.name,
@@ -342,22 +490,32 @@ def run(items_path, resource_path=DEFAULT_RESOURCE, out=DEFAULT_OUT, backbone_na
         "matching_rules": rules.describe(),
         "code": {"rag": __version__, "sha256": code_sha256(), "repository": repo, **runtime()},
     }
+    records = []
+    if continuing:
+        manifest, records = _continue(run_dir, manifest, items, argv)
+        say(f"Resuming {run_dir.name}: {len(records)} of {len(items)} items already done")
     _write_json(run_dir / "run.json", manifest)
 
-    records = []
-    with open(run_dir / "items.jsonl", "w", encoding="utf-8") as items_log, \
-         open(run_dir / "miss_candidates.jsonl", "w", encoding="utf-8") as miss_log, \
-         open(run_dir / "outputs.tsv", "w", encoding="utf-8", newline="") as outputs:
+    mode = "a" if continuing else "w"
+    with open(run_dir / "items.jsonl", mode, encoding="utf-8") as items_log, \
+         open(run_dir / "miss_candidates.jsonl", mode, encoding="utf-8") as miss_log, \
+         open(run_dir / "outputs.tsv", mode, encoding="utf-8", newline="") as outputs:
         table = csv.writer(outputs, delimiter="\t", lineterminator="\n")
-        table.writerow(["item", "status", "output"])
-        for n, item in enumerate(items, start=1):
+        if not continuing:
+            table.writerow(["item", "status", "output"])
+        for n, item in enumerate(items[len(records):], start=len(records) + 1):
             record, candidates = process(item, resource, k, arm, backbone, rules)
             records.append(record)
-            items_log.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
+            # The item's miss candidates first, its record last: on resuming, an item counts
+            # as done only once its record is on disk, and candidates without one are dropped.
             for c in candidates:
                 miss_log.write(json.dumps(dict(c, run=run_dir.name), ensure_ascii=False,
                                           default=str) + "\n")
+            miss_log.flush()
+            items_log.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
+            items_log.flush()
             table.writerow([item.id, record["status"], record["output"] or ""])
+            outputs.flush()
             if backbone is not None and n % 10 == 0:
                 say(f"  {n} of {len(items)} items")
 

@@ -1,0 +1,10 @@
+# The experiments (Hellbender; scoring also on the Mac). Not the website's: that is
+# requirements.txt, which Railway installs, so nothing here may go there.
+torch>=2.4
+transformers>=4.50,<5
+accelerate>=0.33
+pillow
+ctranslate2>=4.4
+sentencepiece
+sacrebleu==2.5.1
+huggingface_hub>=0.24
