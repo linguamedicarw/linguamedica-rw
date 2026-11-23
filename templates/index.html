@@ -6,7 +6,7 @@
 <section class="hero">
     <img src="{{ url_for('static', filename='images/logo-192.png') }}" alt="LinguaMedica RW" class="hero-logo">
     <h1>LinguaMedica <span class="hero-rw">RW</span></h1>
-    <p class="hero-subtitle">English ↔ Kinyarwanda · Curated medical translations for health professionals</p>
+    <p class="hero-subtitle">English ↔ Kinyarwanda | Curated medical translations for health professionals</p>
     <p class="hero-count">{{ total_count }} verified terms</p>
     {% if round_complete_count %}<p class="hero-review" id="heroReview">The review round is complete: two independent reviewers scored all {{ round_complete_count }} new terms{% if review_results_expected %}, and the validated terms go live in {{ review_results_expected }}{% endif %}.</p>{% elif under_review_count and not round_closed %}<p class="hero-review" id="heroReview">+ {{ under_review_count }} new terms under independent review{% if review_results_expected %}, results in {{ review_results_expected }}{% endif %}</p>{% endif %}
 </section>
