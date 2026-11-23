@@ -44,6 +44,8 @@ def app(monkeypatch):
         "REVIEW_PHASE": "pilot",
         "REVIEW_CORPUS": "v1",
         "REVIEW_RESULTS_EXPECTED": "November",
+        # The round is open unless a test closes it, whatever the shell says.
+        "REVIEW_ROUND_CLOSED": False,
     })
     yield application
     os.close(db_fd)

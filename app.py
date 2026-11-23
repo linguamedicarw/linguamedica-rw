@@ -856,8 +856,13 @@ REVIEW_CORPUS = os.environ.get("REVIEW_CORPUS", "v1").strip() or "v1"
 # The homepage says how many new terms are with the reviewers, without
 # showing any of them: "+ 189 new terms under independent review, results in
 # November". The line disappears by itself once no term of the corpus is
-# waiting. Set REVIEW_RESULTS_EXPECTED to another month if the date moves, or
-# to an empty value to drop the ", results in ..." part.
+# waiting. Once the round is closed (REVIEW_ROUND_CLOSED), and only until the
+# editor publishes the first corpus term, it says the scoring is done instead:
+# "The review round is complete: two independent reviewers scored all 189 new
+# terms, and the validated terms go live in December". The first published
+# term ends it, because from then on the real announcement says how many
+# terms went live. Set REVIEW_RESULTS_EXPECTED to another month if the date
+# moves, or to an empty value to drop the month from either line.
 REVIEW_RESULTS_EXPECTED = os.environ.get("REVIEW_RESULTS_EXPECTED", "November").strip()
 
 
@@ -1444,12 +1449,24 @@ def create_app(config_overrides=None):
             Term.published.is_(False),
             Term.corpus_version == app.config["REVIEW_CORPUS"],
         ).count()
+        # After the round closes, and until the first corpus term is published,
+        # the line says the scoring is done and counts the whole corpus.
+        round_closed = bool(app.config["REVIEW_ROUND_CLOSED"])
+        round_complete_count = 0
+        if round_closed and under_review_count:
+            corpus_count = Term.query.filter(
+                Term.corpus_version == app.config["REVIEW_CORPUS"],
+            ).count()
+            if corpus_count == under_review_count:   # none published yet
+                round_complete_count = corpus_count
         return render_template(
             "index.html",
             terms_json=terms_json,
             recent_terms=recent,
             total_count=len(terms),
             under_review_count=under_review_count,
+            round_closed=round_closed,
+            round_complete_count=round_complete_count,
             review_results_expected=app.config["REVIEW_RESULTS_EXPECTED"],
         )
 

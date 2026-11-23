@@ -262,6 +262,34 @@ def test_homepage_line_can_drop_the_month(app, client):
     assert "results in" not in home
 
 
+def test_homepage_says_the_round_is_complete_once_it_closes(app, client):
+    app.config["REVIEW_ROUND_CLOSED"] = True
+    home = client.get("/").get_data(as_text=True)
+    assert ("The review round is complete: two independent reviewers scored all "
+            "189 new terms, and the validated terms go live in November.") in home
+    assert "under independent review" not in home
+    assert "Njyamitsi" not in home and "Intravenous" not in home
+
+
+def test_round_complete_line_can_drop_the_month(app, client):
+    app.config["REVIEW_ROUND_CLOSED"] = True
+    app.config["REVIEW_RESULTS_EXPECTED"] = ""
+    home = client.get("/").get_data(as_text=True)
+    assert "two independent reviewers scored all 189 new terms.</p>" in home
+    assert "go live in" not in home
+
+
+def test_round_complete_line_goes_with_the_first_published_term(app, client):
+    app.config["REVIEW_ROUND_CLOSED"] = True
+    with app.app_context():
+        term = Term.query.filter_by(corpus_version="v1").first()
+        term.published = True
+        db.session.commit()
+    home = client.get("/").get_data(as_text=True)
+    assert "review round is complete" not in home
+    assert "under independent review" not in home
+
+
 def test_public_payload_never_carries_the_editor_note(client):
     for t in client.get("/api/terms").get_json():
         assert "corpus_note" not in t and "corpus_key" not in t and "pilot" not in t
