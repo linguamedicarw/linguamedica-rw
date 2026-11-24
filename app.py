@@ -940,6 +940,34 @@ def _is_prefetch(req):
     return "prefetch" in purpose or "prerender" in purpose
 
 
+# The public suggestion form is the one place anyone can write to the
+# database, so it carries guards against spam bots. A field people never see
+# (off-screen, out of the tab order, hidden from screen readers) catches bots,
+# which fill every field they find. A word suggestion never needs a link, so a
+# URL or a link tag marks spam. An empty term, or one longer than the column
+# that stores it, is not a term. A caught submission gets the same thank-you
+# as a real one, so a bot learns nothing; only a log line records it. On top
+# of that, the route is rate-limited per visitor (see suggest_view).
+SUGGESTION_SPAM_MARKERS = ("://", "www.", "href=", "[url")
+
+
+def _suggestion_spam_reason(form):
+    """Why a suggestion should be dropped, or None if it looks real."""
+    if (form.get("website") or "").strip():
+        return "trap field filled"
+    word = (form.get("english_word") or "").strip()
+    translation = (form.get("suggested_translation") or "").strip()
+    context = (form.get("context") or "").strip()
+    text = " ".join((word, translation, context)).lower()
+    if any(marker in text for marker in SUGGESTION_SPAM_MARKERS):
+        return "link"
+    if not word:
+        return "empty term"
+    if len(word) > 200 or len(translation) > 200:
+        return "too long"
+    return None
+
+
 def visitor_code(ip, user_agent, day, secret):
     """Anonymous code for one browser on one day. Never stored with the IP."""
     raw = f"{secret}|{day.isoformat()}|{ip}|{user_agent or ''}".encode("utf-8")
@@ -1262,6 +1290,32 @@ limiter = Limiter(
 )
 
 
+# The public suggestion form. It lives here, not inside create_app, so that its
+# rate limit is registered once per process: a limit declared inside the
+# factory is added again with every app built (the test suite builds hundreds),
+# and every copy would count each request. Five suggestions a minute and fifty
+# a day per visitor leave room for a translator working through a document.
+@limiter.limit("5 per minute; 50 per day", methods=["POST"],
+               key_func=lambda: _client_ip(request))
+def suggest_view():
+    if request.method == "POST":
+        reason = _suggestion_spam_reason(request.form)
+        if reason:
+            print(f"[suggest] dropped a submission ({reason})")
+        else:
+            suggestion = Suggestion(
+                english_word=request.form.get("english_word", "").strip(),
+                suggested_translation=request.form.get("suggested_translation", "").strip() or None,
+                context=request.form.get("context", "").strip() or None,
+                submitter_email=request.form.get("email", "").strip() or None,
+            )
+            db.session.add(suggestion)
+            db.session.commit()
+        flash("Thank you! Your suggestion has been submitted for review.", "success")
+        return redirect(url_for("index"))
+    return render_template("suggest.html")
+
+
 # ---------------------------------------------------------------------------
 # App Factory
 # ---------------------------------------------------------------------------
@@ -1370,6 +1424,10 @@ def create_app(config_overrides=None):
         # API endpoints get a JSON 429; everything else gets the friendly page
         if request.path.startswith("/api/"):
             return jsonify({"error": "Too many requests. Please slow down."}), 429
+        if request.path.startswith("/suggest"):
+            flash("You have sent several suggestions in a short time. "
+                  "Please wait a little and try again.", "warning")
+            return render_template("suggest.html"), 429
         flash("Too many login attempts. Please wait a minute and try again.", "danger")
         # A reviewer who mistypes a few times stays on their own login page,
         # not the admin one.
@@ -1470,20 +1528,8 @@ def create_app(config_overrides=None):
             review_results_expected=app.config["REVIEW_RESULTS_EXPECTED"],
         )
 
-    @app.route("/suggest", methods=["GET", "POST"])
-    def suggest():
-        if request.method == "POST":
-            suggestion = Suggestion(
-                english_word=request.form.get("english_word", "").strip(),
-                suggested_translation=request.form.get("suggested_translation", "").strip() or None,
-                context=request.form.get("context", "").strip() or None,
-                submitter_email=request.form.get("email", "").strip() or None,
-            )
-            db.session.add(suggestion)
-            db.session.commit()
-            flash("Thank you! Your suggestion has been submitted for review.", "success")
-            return redirect(url_for("index"))
-        return render_template("suggest.html")
+    # The suggestion form is defined at module level (see suggest_view).
+    app.add_url_rule("/suggest", "suggest", suggest_view, methods=["GET", "POST"])
 
     @app.route("/about")
     def about():

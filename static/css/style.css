@@ -1560,3 +1560,14 @@ textarea.form-input {
 .search-month-label {
     color: var(--color-text-muted);
 }
+
+/* The spam trap on the suggestion form: off-screen, out of the tab order and
+   hidden from screen readers. People never fill it; bots do. */
+.hp-field {
+    position: absolute;
+    left: -10000px;
+    top: auto;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+}

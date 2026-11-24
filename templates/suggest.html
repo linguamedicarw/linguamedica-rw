@@ -13,6 +13,13 @@
     <form method="POST" action="{{ url_for('suggest') }}" class="suggest-form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
+        {# Spam trap: off-screen and skipped by keyboard and screen readers.
+           People never fill it; bots do, and their submission is dropped. #}
+        <div class="hp-field" aria-hidden="true">
+            <label for="website">Leave this field empty</label>
+            <input type="text" id="website" name="website" tabindex="-1" autocomplete="off">
+        </div>
+
         <div class="form-group">
             <label for="english_word">English medical term *</label>
             <input type="text" id="english_word" name="english_word" required
